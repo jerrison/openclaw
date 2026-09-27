@@ -1,5 +1,5 @@
-/** Playwright-backed browser helpers loaded as one optional runtime module. */
-export {
+/** Playwright-backed browser helpers loaded as one optional runtime object. */
+import {
   closePageByTargetIdViaPlaywright,
   closePlaywrightBrowserConnection,
   createObservedDialogAbortSignalForPage,
@@ -19,13 +19,13 @@ export {
   respondToObservedDialogOnPage,
   retirePlaywrightBrowserConnectionExact,
 } from "./pw-session.js";
-export {
+import {
   getConsoleMessagesViaPlaywright,
   getNetworkRequestsViaPlaywright,
   getPageErrorsViaPlaywright,
   getPageTextViaPlaywright,
 } from "./pw-tools-core.activity.js";
-export {
+import {
   armDialogViaPlaywright,
   armFileUploadViaPlaywright,
   downloadCurrentDocumentViaPlaywright,
@@ -33,7 +33,7 @@ export {
   uploadViaPlaywright,
   waitForDownloadViaPlaywright,
 } from "./pw-tools-core.downloads.js";
-export {
+import {
   batchViaPlaywright,
   clickViaPlaywright,
   dragViaPlaywright,
@@ -51,8 +51,8 @@ export {
   typeViaPlaywright,
   waitForViaPlaywright,
 } from "./pw-tools-core.interactions.js";
-export { responseBodyViaPlaywright } from "./pw-tools-core.responses.js";
-export {
+import { responseBodyViaPlaywright } from "./pw-tools-core.responses.js";
+import {
   closePageViaPlaywright,
   navigateViaPlaywright,
   pdfViaPlaywright,
@@ -61,7 +61,7 @@ export {
   snapshotRoleViaPlaywright,
   storeSnapshotRefsViaPlaywright,
 } from "./pw-tools-core.snapshot.js";
-export {
+import {
   emulateMediaViaPlaywright,
   setDeviceViaPlaywright,
   setExtraHTTPHeadersViaPlaywright,
@@ -71,7 +71,7 @@ export {
   setOfflineViaPlaywright,
   setTimezoneViaPlaywright,
 } from "./pw-tools-core.state.js";
-export {
+import {
   cookiesClearViaPlaywright,
   cookiesGetViaPlaywright,
   cookiesSetManyViaPlaywright,
@@ -80,4 +80,76 @@ export {
   storageGetViaPlaywright,
   storageSetViaPlaywright,
 } from "./pw-tools-core.storage.js";
-export { traceStartViaPlaywright, traceStopViaPlaywright } from "./pw-tools-core.trace.js";
+import { traceStartViaPlaywright, traceStopViaPlaywright } from "./pw-tools-core.trace.js";
+
+export const pwAi = {
+  downloadCurrentDocumentViaPlaywright,
+  closePageByTargetIdViaPlaywright,
+  closePlaywrightBrowserConnection,
+  retirePlaywrightBrowserConnectionExact,
+  createPageViaPlaywright,
+  ensurePageState,
+  forceDisconnectPlaywrightForTarget,
+  focusPageByTargetIdViaPlaywright,
+  createObservedDialogAbortSignalForPage,
+  getObservedBrowserStateForPage,
+  getObservedBrowserStateViaPlaywright,
+  getDocumentIdentitiesViaPlaywright,
+  getPageForTargetId,
+  hasCachedPlaywrightBrowserConnection,
+  isBrowserObservedDialogBlockedError,
+  listPagesViaPlaywright,
+  markObservedDialogsHandledRemotelyForPage,
+  refLocator,
+  respondToObservedDialogOnPage,
+  armDialogViaPlaywright,
+  armFileUploadViaPlaywright,
+  batchViaPlaywright,
+  clickViaPlaywright,
+  closePageViaPlaywright,
+  cookiesClearViaPlaywright,
+  cookiesGetViaPlaywright,
+  cookiesSetManyViaPlaywright,
+  cookiesSetViaPlaywright,
+  downloadViaPlaywright,
+  dragViaPlaywright,
+  emulateMediaViaPlaywright,
+  evaluateViaPlaywright,
+  executeActViaPlaywright,
+  fillFormViaPlaywright,
+  getConsoleMessagesViaPlaywright,
+  getNetworkRequestsViaPlaywright,
+  getPageErrorsViaPlaywright,
+  getPageTextViaPlaywright,
+  highlightViaPlaywright,
+  hoverViaPlaywright,
+  navigateViaPlaywright,
+  pdfViaPlaywright,
+  pressKeyViaPlaywright,
+  resizeViewportViaPlaywright,
+  responseBodyViaPlaywright,
+  scrollIntoViewViaPlaywright,
+  selectOptionViaPlaywright,
+  setDeviceViaPlaywright,
+  setExtraHTTPHeadersViaPlaywright,
+  setGeolocationViaPlaywright,
+  setHttpCredentialsViaPlaywright,
+  setInputFilesViaPlaywright,
+  setLocaleViaPlaywright,
+  setOfflineViaPlaywright,
+  setTimezoneViaPlaywright,
+  snapshotAriaViaPlaywright,
+  snapshotRoleViaPlaywright,
+  storeSnapshotRefsViaPlaywright,
+  screenshotWithLabelsViaPlaywright,
+  storageClearViaPlaywright,
+  storageGetViaPlaywright,
+  storageSetViaPlaywright,
+  takeScreenshotViaPlaywright,
+  traceStartViaPlaywright,
+  traceStopViaPlaywright,
+  typeViaPlaywright,
+  uploadViaPlaywright,
+  waitForDownloadViaPlaywright,
+  waitForViaPlaywright,
+};
