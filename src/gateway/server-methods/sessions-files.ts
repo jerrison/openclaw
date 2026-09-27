@@ -13,6 +13,7 @@ import {
   validateSessionsFilesListParams,
   validateSessionsFilesSetParams,
 } from "../../../packages/gateway-protocol/src/index.js";
+import { getAgentWorkspaceAccess } from "../../agents/workspace-access.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { pruneMapToMaxSize } from "../../infra/map-size.js";
 import { normalizeAgentId, parseAgentSessionKey } from "../../routing/session-key.js";
@@ -300,7 +301,9 @@ export function resolveLocalSessionWorkspaceRoot(params: {
   agentId?: string;
 }): string | undefined {
   const loaded = loadSessionFileRoot(params);
-  return loaded.entry?.execNode ? undefined : loaded.root;
+  return loaded.entry?.execNode || (loaded.root && getAgentWorkspaceAccess(loaded.root))
+    ? undefined
+    : loaded.root;
 }
 
 async function loadSessionFiles(params: {
@@ -595,11 +598,13 @@ export const sessionsFilesHandlers: GatewayRequestHandlers = {
         });
         return;
       }
-      if (loaded.entry?.execNode) {
+      if (loaded.entry?.execNode || getAgentWorkspaceAccess(workspaceRoot)) {
         respond(true, {
           ok: false,
           path: workspaceRoot,
-          error: "Cannot reveal this workspace because the session runs on an exec node.",
+          error: loaded.entry?.execNode
+            ? "Cannot reveal this workspace because the session runs on an exec node."
+            : "Cannot reveal this workspace because its files live on a remote host.",
         });
         return;
       }

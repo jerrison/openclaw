@@ -266,9 +266,15 @@ async function toSessionFileEntry(
     entry.size = read.stat.size;
     entry.updatedAtMs = toUpdatedAtMs(read.stat.mtimeMs);
     await populateSessionFilePreview(entry, read.buffer);
+    if (read.readOnly) {
+      delete entry.hash;
+    }
     return entry;
   }
   const prefix = await readWorkspaceFilePrefix(root!, browserPath, MIME_SNIFF_PREFIX_BYTES);
+  if (prefix === "unsupported") {
+    return entry;
+  }
   if (!prefix) {
     return { ...base, missing: true };
   }
@@ -433,8 +439,13 @@ export async function listSessionWorkspaceFiles(
 }> {
   const loaded = params;
   const root = loaded.root;
-  const gitCheckout = loaded.diffCwd ? insideGitCheckout(loaded.diffCwd) : undefined;
   const workspaceRoot = root ? await openWorkspaceRoot(root) : undefined;
+  const gitCheckout =
+    workspaceRoot && "access" in workspaceRoot
+      ? undefined
+      : loaded.diffCwd
+        ? insideGitCheckout(loaded.diffCwd)
+        : undefined;
   const workspaceFiles = root
     ? loaded.files.filter((file) =>
         Boolean(resolveTouchedFilePath({ root, fileRoot: loaded.fileRoot, filePath: file.path })),

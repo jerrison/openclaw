@@ -1,11 +1,15 @@
 import fs from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { sessionsFilesHandlers } from "./sessions-files.js";
+import { useAutoCleanupTempDirTracker } from "../../../test/helpers/temp-dir.js";
+import { registerAgentWorkspaceAccess } from "../../agents/workspace-access.js";
+import { root as openSafeRoot, FsSafeError } from "../../infra/fs-safe.js";
+import { resolveLocalSessionWorkspaceRoot, sessionsFilesHandlers } from "./sessions-files.js";
 import {
   createSessionFilesHandlerInvoker,
   createVisibleMessagesMock,
   expectOkPayload,
+  expectError,
   hashContent,
   IMAGE_PREVIEW_FIXTURES,
   prepareSessionFilesTest,
@@ -52,12 +56,104 @@ const mockVisibleMessages = createVisibleMessagesMock(
 
 describe("sessions.files preview formats", () => {
   let workspaceRoot: string;
+  const remoteDirs = useAutoCleanupTempDirTracker(afterEach);
+  let releaseRemote: (() => void) | undefined;
 
   beforeEach(() => {
     workspaceRoot = prepareSessionFilesTest(mocks, mockVisibleMessages);
   });
   afterEach(() => {
+    releaseRemote?.();
+    releaseRemote = undefined;
     removeWorkspaceFixture(workspaceRoot);
+  });
+
+  it("browses and previews the workspace owner's files without exposing a local copy or unsafe edits", async () => {
+    const remote = remoteDirs.make("session-remote-preview-");
+    fs.writeFileSync(path.join(workspaceRoot, "result.json"), "Gateway decoy");
+    fs.symlinkSync("result.json", path.join(remote, "result-link.json"));
+    fs.writeFileSync(path.join(remote, "result.json"), '{"total":46}');
+    fs.writeFileSync(path.join(remote, "large.txt"), "x".repeat(256 * 1024 + 1));
+    const owner = await openSafeRoot(remote);
+    const ownerPath = (filePath: string) => path.relative(workspaceRoot, filePath);
+    const readFile = vi.fn(
+      async ({ filePath, maxBytes }: { filePath: string; maxBytes?: number }) =>
+        (await owner.read(ownerPath(filePath), { maxBytes })).buffer,
+    );
+    releaseRemote = registerAgentWorkspaceAccess(workspaceRoot, {
+      bridge: {
+        readFile,
+        writeFile: async () => {
+          throw new Error("Unexpected non-CAS write");
+        },
+        stat: async ({ filePath }) => {
+          const stat = await owner.stat(ownerPath(filePath)).catch((error: unknown) => {
+            if (error instanceof FsSafeError && error.code === "not-found") {
+              return null;
+            }
+            throw error;
+          });
+          if (!stat) {
+            return null;
+          }
+          return {
+            type: stat.isFile ? "file" : "directory",
+            size: stat.size,
+            mtimeMs: stat.mtimeMs,
+          };
+        },
+        readDirectory: async ({ filePath }) =>
+          (await owner.list(ownerPath(filePath), { withFileTypes: true })).map((entry) => ({
+            name: entry.name,
+            isDirectory: entry.isDirectory,
+            isFile: entry.isFile,
+            size: entry.size,
+            mtimeMs: entry.mtimeMs,
+          })),
+      },
+    });
+    const get = (filePath: string) =>
+      invokeSessionFilesHandler("sessions.files.get", {
+        sessionKey: "agent:main:main",
+        path: filePath,
+      });
+    const payload = expectOkPayload(await get("result.json"));
+    expect(payload.file).toMatchObject({
+      content: '{"total":46}',
+      previewKind: "text",
+      missing: false,
+    });
+    expect(payload.file.hash).toBeUndefined();
+    const listed = expectOkPayload(
+      await invokeSessionFilesHandler("sessions.files.list", {
+        sessionKey: "agent:main:main",
+      }),
+    );
+    expect(listed.browser.entries.map((entry: { name: string }) => entry.name)).toEqual([
+      "large.txt",
+      "result.json",
+    ]);
+    expect(listed.gitCheckout).toBeUndefined();
+    expect(resolveLocalSessionWorkspaceRoot({ sessionKey: "agent:main:main" })).toBeUndefined();
+    const reveal = expectOkPayload(
+      await invokeSessionFilesHandler("sessions.files.reveal", {
+        key: "agent:main:main",
+      }),
+    );
+    expect(reveal).toMatchObject({ ok: false, error: expect.stringContaining("remote host") });
+    expect(expectError(await get("large.txt")).details.type).toBe("session_file_too_large");
+    expect(readFile).toHaveBeenCalledTimes(1);
+    await expect(
+      invokeSessionFilesHandler("sessions.files.set", {
+        sessionKey: "agent:main:main",
+        path: "result.json",
+        content: "changed",
+        expectedHash: hashContent('{"total":46}'),
+      }),
+    ).rejects.toThrow("conflict-safe editing");
+    expect(fs.readFileSync(path.join(workspaceRoot, "result.json"), "utf8")).toBe("Gateway decoy");
+    releaseRemote();
+    await expect(get("result.json")).rejects.toThrow("stopped or not ready");
   });
 
   it.each(IMAGE_PREVIEW_FIXTURES)(

@@ -71,3 +71,14 @@ to host-root admission. Older external bridges that omit the property retain
 the host-root compatibility exposed in v2026.9.4. New implementations should
 supply the mappings; removal of that compatibility requires a breaking SDK
 contract that makes the property required.
+
+## Directory listing metadata
+
+`SandboxFsBridge.readDirectory` returns `DirectoryEntry` records through
+`openclaw/plugin-sdk/sandbox`. Providers may include `isFile`, `size`, and `mtimeMs`
+from their no-follow directory listing. File browsers use this metadata without
+an additional stat request for each child; providers that omit size or time keep
+the existing stat-based path. `isFile: false` with `isDirectory: false` identifies
+an entry such as a symlink that the browser should not treat as a regular file.
+Listing metadata never grants permission to read an entry. File reads continue
+to enforce the provider's path policy, byte limits, and active workspace binding.

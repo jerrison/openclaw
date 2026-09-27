@@ -262,7 +262,7 @@ export function createNodeWorkspaceBridge(options: {
       return { type: payload.type, size: payload.size, mtimeMs: payload.mtimeMs };
     },
     async readDirectory(params) {
-      const entries: { name: string; isDirectory: boolean }[] = [];
+      const entries: Awaited<ReturnType<NonNullable<SandboxFsBridge["readDirectory"]>>> = [];
       let offset = 0;
       while (true) {
         const payload = await invoke(
@@ -292,11 +292,23 @@ export function createNodeWorkspaceBridge(options: {
             entry.name.includes("/") ||
             entry.name.includes("\0") ||
             (path.sep === "\\" && entry.name.includes("\\")) ||
-            typeof entry.isDir !== "boolean"
+            typeof entry.isDir !== "boolean" ||
+            (entry.isFile !== undefined && typeof entry.isFile !== "boolean") ||
+            typeof entry.size !== "number" ||
+            !Number.isSafeInteger(entry.size) ||
+            entry.size < 0 ||
+            typeof entry.mtime !== "number" ||
+            !Number.isFinite(entry.mtime)
           ) {
             throw new Error("Invalid dir.list entry");
           }
-          entries.push({ name: entry.name, isDirectory: entry.isDir });
+          entries.push({
+            name: entry.name,
+            isDirectory: entry.isDir,
+            ...(typeof entry.isFile === "boolean" ? { isFile: entry.isFile } : {}),
+            size: entry.size,
+            mtimeMs: entry.mtime,
+          });
         }
         if (payload.truncated === false) {
           return entries;

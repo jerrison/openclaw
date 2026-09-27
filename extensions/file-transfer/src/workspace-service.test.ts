@@ -692,7 +692,7 @@ describe("registered node workspace service", () => {
       const entries = await getAgentWorkspaceAccess(local)!.bridge.readDirectory!({
         filePath: ".",
       });
-      expect(entries).toEqual([
+      expect(entries).toMatchObject([
         { name: "AGENTS.md", isDirectory: false },
         { name: "draft\\old.txt", isDirectory: false },
       ]);
@@ -721,9 +721,18 @@ describe("registered node workspace service", () => {
     await expect(access.bridge.readFile({ filePath: "missing" })).rejects.toMatchObject({
       code: "ENOENT",
     });
-    expect(await access.bridge.readDirectory!({ filePath: local })).toEqual([
-      { name: "AGENTS.md", isDirectory: false },
+    await fs.symlink("AGENTS.md", path.join(remote, "link.md"));
+    expect(await access.bridge.readDirectory!({ filePath: local })).toMatchObject([
+      {
+        name: "AGENTS.md",
+        isDirectory: false,
+        isFile: true,
+        size: 20,
+        mtimeMs: expect.any(Number),
+      },
+      { name: "link.md", isDirectory: false, isFile: false, size: 9 },
     ]);
+    await expect(access.bridge.readFile({ filePath: "link.md" })).rejects.toThrow(/SYMLINK/);
     await access.bridge.writeFile({ filePath, data: "Live owner edit" });
     expect(await fs.readFile(path.join(remote, "AGENTS.md"), "utf8")).toBe("Live owner edit");
     expect(await fs.readFile(filePath, "utf8")).toBe("Gateway decoy");
@@ -751,7 +760,9 @@ describe("registered node workspace service", () => {
     const entries = await getAgentWorkspaceAccess(local)!.bridge.readDirectory!({ filePath: "." });
     expect(entries).toHaveLength(4101);
     expect(new Set(entries.map((entry) => entry.name))).toEqual(new Set(await fs.readdir(remote)));
-    expect(entries).toContainEqual({ name: "AGENTS.md", isDirectory: false });
+    expect(entries).toContainEqual(
+      expect.objectContaining({ name: "AGENTS.md", isDirectory: false }),
+    );
   });
 
   it("rejects a directory continuation that makes no progress", async () => {
