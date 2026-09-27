@@ -4,6 +4,7 @@ import { once } from "node:events";
 import { writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { join } from "node:path";
+import { createDeferred } from "openclaw/plugin-sdk/extension-shared";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { sandboxExecServerRegistry } from "./sandbox-exec-server-registry.js";
 import { ensureCodexSandboxExecServerEnvironment } from "./sandbox-exec-server.js";
@@ -164,12 +165,8 @@ async function createLiveRedirectSandbox(
 
 describe("OpenClaw Codex sandbox exec-server HTTP", () => {
   it("cancels an outstanding nonstreaming HTTP response when its exec-server socket closes", async () => {
-    const responseClosed = vi.fn();
-    let heldResponse: ServerResponse | undefined;
-    const fixture = await createLiveRedirectSandbox("source.test", 302, (response) => {
-      heldResponse = response;
-      response.once("close", responseClosed);
-    });
+    const responseReady = createDeferred<ServerResponse>();
+    const fixture = await createLiveRedirectSandbox("source.test", 302, responseReady.resolve);
     try {
       const socket = await openSandboxHttpSocket(fixture.sandbox);
       try {
@@ -181,18 +178,20 @@ describe("OpenClaw Codex sandbox exec-server HTTP", () => {
             params: { requestId: "pending-http", method: "GET", url: fixture.url },
           }),
         );
-        await vi.waitFor(() => expect(heldResponse).toBeDefined());
+        const response = await responseReady.promise;
+        expect(response.destroyed).toBe(false);
+        expect(response.writableEnded).toBe(false);
+        const responseClosed = once(response, "close");
 
         socket.terminate();
 
-        await vi.waitFor(() => expect(responseClosed).toHaveBeenCalledOnce(), {
-          timeout: 5_000,
-        });
+        await responseClosed;
+        expect(response.destroyed).toBe(true);
+        expect(response.writableEnded).toBe(false);
       } finally {
         socket.terminate();
       }
     } finally {
-      heldResponse?.destroy();
       await fixture.close();
     }
   });
