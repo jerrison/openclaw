@@ -74,8 +74,8 @@ contract that makes the property required.
 
 ## Directory listing metadata
 
-`SandboxFsBridge.readDirectory` returns `DirectoryEntry` records through
-`openclaw/plugin-sdk/sandbox`. Providers may include `isFile`, `size`, and `mtimeMs`
+`SandboxContext.fsBridge.readDirectory` returns directory entry records. Providers
+may include `isFile`, `size`, and `mtimeMs`
 from their no-follow directory listing. File browsers use this metadata without
 an additional stat request for each child; providers that omit size or time keep
 the existing stat-based path. `isFile: false` with `isDirectory: false` identifies
