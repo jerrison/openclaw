@@ -291,16 +291,13 @@ describe("attachGatewayWsMessageHandler post-connect health refresh", () => {
       prewarmStarted.resolve();
       return prewarm.promise;
     });
-    const harness = attachGatewayHarness({
-      connId: "history-prewarm",
-      connectNonce: "history-prewarm",
-    });
+    const harness = connectTrustedProxyUser("history-prewarm");
     harness.socketSend.mockImplementation((_payload, callback) => {
       callback?.();
       helloSent.resolve();
     });
-    harness.sendConnect("connect-history-prewarm", BACKEND_CONNECT_PARAMS);
     try {
+      await harness.whenAttached;
       await Promise.all([prewarmStarted.promise, helloSent.promise]);
       expect(prewarmGatewaySessionHistoryMock).toHaveBeenCalledWith(
         loadConfigMock(),
@@ -313,6 +310,21 @@ describe("attachGatewayWsMessageHandler post-connect health refresh", () => {
     } finally {
       prewarm.resolve();
     }
+  });
+
+  it("skips history prewarm for an admitted backend operator", async () => {
+    const harness = attachGatewayHarness({
+      connId: "backend-history-prewarm",
+      connectNonce: "backend-history-prewarm",
+    });
+    harness.sendConnect("connect-backend-history-prewarm", BACKEND_CONNECT_PARAMS);
+    await harness.runWhenIdle();
+    expect(harness.socketSend).toHaveBeenCalledOnce();
+    expect(JSON.parse(harness.socketSend.mock.calls[0]![0])).toMatchObject({
+      ok: true,
+      payload: { type: "hello-ok" },
+    });
+    expect(prewarmGatewaySessionHistoryMock).not.toHaveBeenCalled();
   });
 
   it("keeps one editable owner profile across shared-secret and device-token reconnects", async () => {

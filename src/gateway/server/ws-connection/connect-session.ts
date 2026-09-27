@@ -538,7 +538,8 @@ export async function attachAuthenticatedGatewayConnect(
   handoffReceiver.value();
   setHandshakeState("connected");
   advanceHandshakePhase("session_attached");
-  if (role === "operator") {
+  // Ephemeral clients never page transcripts, so avoid starting an idle history worker for them.
+  if (role === "operator" && !isEphemeralGatewayClient(connectParams.client)) {
     runDetachedConnectWork(
       async () => {
         const { prewarmGatewaySessionHistory } = await import("../../server-history-prewarm.js");
