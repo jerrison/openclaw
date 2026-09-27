@@ -203,16 +203,12 @@ function mockVideoPluginProvider(capabilities: Record<string, unknown> = {}) {
   ]);
 }
 
-function createVideoPluginTool() {
-  const tool = createVideoGenerateTool({
-    config: configWithDefaults({
-      videoGenerationModel: { primary: "video-plugin/vid-v1" },
+function createConfiguredVideoTool(primary = "video-plugin/vid-v1") {
+  return expectVideoGenerateTool(
+    createVideoGenerateTool({
+      config: configWithDefaults({ videoGenerationModel: { primary } }),
     }),
-  });
-  if (!tool) {
-    throw new Error("expected video_generate tool");
-  }
-  return tool;
+  );
 }
 
 function mockSavedVideoResult(fileName = "out.mp4") {
@@ -658,14 +654,7 @@ describe("createVideoGenerateTool", () => {
       .spyOn(mediaStore, "saveMediaBuffer")
       .mockResolvedValueOnce(savedMedia("generated-lobster.mp4", 11));
 
-    const tool = createVideoGenerateTool({
-      config: configWithDefaults({
-        videoGenerationModel: { primary: "qwen/wan2.6-t2v" },
-      }),
-    });
-    if (!tool) {
-      throw new Error("expected video_generate tool");
-    }
+    const tool = createConfiguredVideoTool("qwen/wan2.6-t2v");
 
     await tool.execute("call-default-cap", { prompt: "friendly lobster surfing" });
 
@@ -801,13 +790,7 @@ describe("createVideoGenerateTool", () => {
       videos: [videoAsset("valid", "valid.mp4"), { mimeType: "video/mp4" }],
     });
     const saveMediaBuffer = vi.spyOn(mediaStore, "saveMediaBuffer");
-    const tool = expectVideoGenerateTool(
-      createVideoGenerateTool({
-        config: configWithDefaults({
-          videoGenerationModel: { primary: "qwen/wan2.6-t2v" },
-        }),
-      }),
-    );
+    const tool = createConfiguredVideoTool("qwen/wan2.6-t2v");
 
     await expect(tool.execute("call-invalid-asset", { prompt: "two videos" })).rejects.toThrow(
       "Provider qwen returned a video asset with neither buffer nor url — cannot deliver.",
@@ -841,14 +824,7 @@ describe("createVideoGenerateTool", () => {
     const deleteMediaBuffer = vi
       .spyOn(mediaStore, "deleteMediaBuffer")
       .mockRejectedValueOnce(new Error("video cleanup failed"));
-    const tool = createVideoGenerateTool({
-      config: configWithDefaults({
-        videoGenerationModel: { primary: "qwen/wan2.6-t2v" },
-      }),
-    });
-    if (!tool) {
-      throw new Error("expected video_generate tool");
-    }
+    const tool = createConfiguredVideoTool("qwen/wan2.6-t2v");
 
     await expect(tool.execute("call-partial-save", { prompt: "two videos" })).rejects.toBe(
       terminalError,
@@ -876,14 +852,7 @@ describe("createVideoGenerateTool", () => {
       .mockRejectedValueOnce(SaveMediaSourceError.tooLarge(16 * 1024 * 1024))
       .mockResolvedValueOnce(savedMedia("second.mp4", 18));
 
-    const tool = createVideoGenerateTool({
-      config: configWithDefaults({
-        videoGenerationModel: { primary: "fal/fal-ai/minimax/video-01-live" },
-      }),
-    });
-    if (!tool) {
-      throw new Error("expected video_generate tool");
-    }
+    const tool = createConfiguredVideoTool("fal/fal-ai/minimax/video-01-live");
 
     const result = await tool.execute("call-url-fallback", {
       prompt: "friendly lobster surfing",
@@ -1495,7 +1464,7 @@ describe("createVideoGenerateTool", () => {
   it("rejects providerOptions that is not a plain JSON object", async () => {
     mockVideoPluginProvider();
     const generateSpy = vi.spyOn(videoGenerationRuntime, "generateVideo");
-    const tool = createVideoPluginTool();
+    const tool = createConfiguredVideoTool();
 
     // Array-shaped providerOptions should be rejected up front, not cast to a
     // Record with numeric-string keys and silently forwarded.
@@ -1524,7 +1493,7 @@ describe("createVideoGenerateTool", () => {
       providerOptions: { seed: "number", draft: "boolean" },
     });
     const generateSpy = mockSavedVideoResult();
-    const tool = createVideoPluginTool();
+    const tool = createConfiguredVideoTool();
 
     await tool.execute("call-1", {
       prompt: "lobster",
@@ -1544,7 +1513,7 @@ describe("createVideoGenerateTool", () => {
       imageToVideo: { enabled: true, maxInputImages: 2 },
     });
     const generateSpy = vi.spyOn(videoGenerationRuntime, "generateVideo");
-    const tool = createVideoPluginTool();
+    const tool = createConfiguredVideoTool();
 
     await expect(
       tool.execute("call-1", {
@@ -1560,7 +1529,7 @@ describe("createVideoGenerateTool", () => {
   it("rejects *Roles that are not arrays", async () => {
     mockVideoPluginProvider();
     const generateSpy = vi.spyOn(videoGenerationRuntime, "generateVideo");
-    const tool = createVideoPluginTool();
+    const tool = createConfiguredVideoTool();
 
     await expect(
       tool.execute("call-1", {
@@ -1617,7 +1586,7 @@ describe("createVideoGenerateTool", () => {
         imageToVideo: { enabled: true, maxInputImages: 2 },
       });
       const generateSpy = mockSavedVideoResult();
-      const tool = createVideoPluginTool();
+      const tool = createConfiguredVideoTool();
 
       await tool.execute("call-1", {
         prompt: "lobster",
@@ -1643,7 +1612,7 @@ describe("createVideoGenerateTool", () => {
       contentType: "image/png",
     });
     const generateSpy = mockSavedVideoResult();
-    const tool = createVideoPluginTool();
+    const tool = createConfiguredVideoTool();
 
     await tool.execute("call-1", {
       prompt: "lobster",
@@ -1697,7 +1666,7 @@ describe("createVideoGenerateTool", () => {
       maxInputAudios: 1,
     });
     const generateSpy = vi.spyOn(videoGenerationRuntime, "generateVideo");
-    const tool = createVideoPluginTool();
+    const tool = createConfiguredVideoTool();
 
     await expect(
       tool.execute("call-1", {
@@ -1711,7 +1680,7 @@ describe("createVideoGenerateTool", () => {
   it("accepts provider-specific aspectRatio and resolution values and forwards them to the runtime", async () => {
     mockVideoPluginProvider();
     const generateSpy = mockSavedVideoResult();
-    const tool = createVideoPluginTool();
+    const tool = createConfiguredVideoTool();
 
     await tool.execute("call-1", {
       prompt: "lobster",
