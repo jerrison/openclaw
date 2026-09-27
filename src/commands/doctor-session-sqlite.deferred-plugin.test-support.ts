@@ -44,6 +44,8 @@ export async function seedDeferredPluginSessionSource(
   missingTranscript?: "declared" | "metadata-only",
 ) {
   // This fixture models active legacy stores with known deletion history.
+  // Keep them within retention so background maintenance cannot race setup deletions.
+  const updatedAt = Date.now();
   openOpenClawStateDatabase({ env: state.env });
   const sessionsDir =
     layout === "external"
@@ -63,7 +65,7 @@ export async function seedDeferredPluginSessionSource(
           {
             sessionId,
             ...(missingTranscript === "declared" ? { sessionFile: path.basename(transcript) } : {}),
-            updatedAt: 20,
+            updatedAt,
           },
         ];
       }
@@ -93,7 +95,7 @@ export async function seedDeferredPluginSessionSource(
       );
       return [
         `agent:main:${name}`,
-        { sessionId, sessionFile: path.basename(transcript), updatedAt: 20 },
+        { sessionId, sessionFile: path.basename(transcript), updatedAt },
       ];
     }),
   );

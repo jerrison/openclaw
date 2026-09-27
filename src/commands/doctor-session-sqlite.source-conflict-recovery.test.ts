@@ -506,12 +506,13 @@ describe("retained plugin session source recovery", () => {
             ? path.join(path.dirname(storePath), "legacy-kept.jsonl")
             : storePath;
         if (kind === "conflicting-transcript") {
-          await deleteSessionEntryLifecycle({
+          const deleted = await deleteSessionEntryLifecycle({
             ...scope,
             target: { canonicalKey: "agent:main:deleted", storeKeys: ["agent:main:deleted"] },
             archiveTranscript: false,
             deleteTranscriptWithoutArchive: true,
           });
+          expect(deleted.deleted).toBe(true);
         }
         const sqliteEntries = kind === "conflicting-transcript" ? 1 : 2;
         const changedMetadata = JSON.parse(fs.readFileSync(storePath, "utf8"));

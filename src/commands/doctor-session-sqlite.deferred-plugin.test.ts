@@ -92,12 +92,13 @@ describe("session sources needed by deferred plugin migrations", () => {
           { ...scope, sessionKey: "agent:main:kept" },
           { label: "changed after partial import" },
         );
-        await deleteSessionEntryLifecycle({
+        const deleted = await deleteSessionEntryLifecycle({
           ...scope,
           target: { canonicalKey: "agent:main:deleted", storeKeys: ["agent:main:deleted"] },
           archiveTranscript: false,
           deleteTranscriptWithoutArchive: true,
         });
+        expect(deleted.deleted).toBe(true);
         const retried = await run();
         expect(retried.totals.importedEntries).toBe(0);
         expect(
