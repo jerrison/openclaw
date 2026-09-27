@@ -1,5 +1,5 @@
-/** Playwright-backed browser helpers loaded as one optional runtime object. */
-import {
+/** Playwright-backed browser helpers loaded as one optional runtime module. */
+export {
   closePageByTargetIdViaPlaywright,
   closePlaywrightBrowserConnection,
   createObservedDialogAbortSignalForPage,
@@ -19,13 +19,13 @@ import {
   respondToObservedDialogOnPage,
   retirePlaywrightBrowserConnectionExact,
 } from "./pw-session.js";
-import {
+export {
   getConsoleMessagesViaPlaywright,
   getNetworkRequestsViaPlaywright,
   getPageErrorsViaPlaywright,
   getPageTextViaPlaywright,
 } from "./pw-tools-core.activity.js";
-import {
+export {
   armDialogViaPlaywright,
   armFileUploadViaPlaywright,
   downloadCurrentDocumentViaPlaywright,
@@ -33,7 +33,7 @@ import {
   uploadViaPlaywright,
   waitForDownloadViaPlaywright,
 } from "./pw-tools-core.downloads.js";
-import {
+export {
   batchViaPlaywright,
   clickViaPlaywright,
   dragViaPlaywright,
@@ -51,8 +51,8 @@ import {
   typeViaPlaywright,
   waitForViaPlaywright,
 } from "./pw-tools-core.interactions.js";
-import { responseBodyViaPlaywright } from "./pw-tools-core.responses.js";
-import {
+export { responseBodyViaPlaywright } from "./pw-tools-core.responses.js";
+export {
   closePageViaPlaywright,
   navigateViaPlaywright,
   pdfViaPlaywright,
@@ -61,7 +61,7 @@ import {
   snapshotRoleViaPlaywright,
   storeSnapshotRefsViaPlaywright,
 } from "./pw-tools-core.snapshot.js";
-import {
+export {
   emulateMediaViaPlaywright,
   setDeviceViaPlaywright,
   setExtraHTTPHeadersViaPlaywright,
@@ -71,7 +71,7 @@ import {
   setOfflineViaPlaywright,
   setTimezoneViaPlaywright,
 } from "./pw-tools-core.state.js";
-import {
+export {
   cookiesClearViaPlaywright,
   cookiesGetViaPlaywright,
   cookiesSetManyViaPlaywright,
@@ -80,76 +80,4 @@ import {
   storageGetViaPlaywright,
   storageSetViaPlaywright,
 } from "./pw-tools-core.storage.js";
-import { traceStartViaPlaywright, traceStopViaPlaywright } from "./pw-tools-core.trace.js";
-
-export const pwAi = {
-  downloadCurrentDocumentViaPlaywright,
-  closePageByTargetIdViaPlaywright,
-  closePlaywrightBrowserConnection,
-  retirePlaywrightBrowserConnectionExact,
-  createPageViaPlaywright,
-  ensurePageState,
-  forceDisconnectPlaywrightForTarget,
-  focusPageByTargetIdViaPlaywright,
-  createObservedDialogAbortSignalForPage,
-  getObservedBrowserStateForPage,
-  getObservedBrowserStateViaPlaywright,
-  getDocumentIdentitiesViaPlaywright,
-  getPageForTargetId,
-  hasCachedPlaywrightBrowserConnection,
-  isBrowserObservedDialogBlockedError,
-  listPagesViaPlaywright,
-  markObservedDialogsHandledRemotelyForPage,
-  refLocator,
-  respondToObservedDialogOnPage,
-  armDialogViaPlaywright,
-  armFileUploadViaPlaywright,
-  batchViaPlaywright,
-  clickViaPlaywright,
-  closePageViaPlaywright,
-  cookiesClearViaPlaywright,
-  cookiesGetViaPlaywright,
-  cookiesSetManyViaPlaywright,
-  cookiesSetViaPlaywright,
-  downloadViaPlaywright,
-  dragViaPlaywright,
-  emulateMediaViaPlaywright,
-  evaluateViaPlaywright,
-  executeActViaPlaywright,
-  fillFormViaPlaywright,
-  getConsoleMessagesViaPlaywright,
-  getNetworkRequestsViaPlaywright,
-  getPageErrorsViaPlaywright,
-  getPageTextViaPlaywright,
-  highlightViaPlaywright,
-  hoverViaPlaywright,
-  navigateViaPlaywright,
-  pdfViaPlaywright,
-  pressKeyViaPlaywright,
-  resizeViewportViaPlaywright,
-  responseBodyViaPlaywright,
-  scrollIntoViewViaPlaywright,
-  selectOptionViaPlaywright,
-  setDeviceViaPlaywright,
-  setExtraHTTPHeadersViaPlaywright,
-  setGeolocationViaPlaywright,
-  setHttpCredentialsViaPlaywright,
-  setInputFilesViaPlaywright,
-  setLocaleViaPlaywright,
-  setOfflineViaPlaywright,
-  setTimezoneViaPlaywright,
-  snapshotAriaViaPlaywright,
-  snapshotRoleViaPlaywright,
-  storeSnapshotRefsViaPlaywright,
-  screenshotWithLabelsViaPlaywright,
-  storageClearViaPlaywright,
-  storageGetViaPlaywright,
-  storageSetViaPlaywright,
-  takeScreenshotViaPlaywright,
-  traceStartViaPlaywright,
-  traceStopViaPlaywright,
-  typeViaPlaywright,
-  uploadViaPlaywright,
-  waitForDownloadViaPlaywright,
-  waitForViaPlaywright,
-};
+export { traceStartViaPlaywright, traceStopViaPlaywright } from "./pw-tools-core.trace.js";

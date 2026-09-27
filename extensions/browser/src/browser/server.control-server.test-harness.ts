@@ -563,7 +563,7 @@ vi.mock("./cdp.js", () => ({
   }),
 }));
 
-vi.mock("./pw-ai.js", () => ({ pwAi: pwMocks }));
+vi.mock("./pw-ai.js", () => pwMocks);
 
 vi.mock("./chrome-mcp.js", () => chromeMcpMocks);
 
