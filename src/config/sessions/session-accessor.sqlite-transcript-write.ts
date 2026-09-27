@@ -1,4 +1,6 @@
+import type { DatabaseSync } from "node:sqlite";
 import { err, ok, type Result } from "@openclaw/normalization-core/result";
+import { hasSqlitePostCommitScope } from "../../infra/sqlite-post-commit.js";
 import {
   openOpenClawAgentDatabase,
   resolveOpenClawAgentSqlitePath,
@@ -89,6 +91,11 @@ export type TranscriptWriteSnapshot<T> = {
   lifecycleRevision?: string;
   before: SessionTranscriptContextVersion;
   after: SessionTranscriptContextVersion;
+};
+
+type TranscriptWriteViewGuard = {
+  assertCurrent: () => void;
+  onPendingTransaction: (database: DatabaseSync) => void;
 };
 
 export type TranscriptMessageWriteSnapshot<TMessage> = TranscriptWriteSnapshot<
@@ -397,6 +404,7 @@ export function appendTranscriptEventSnapshotSync(
   event: TranscriptEvent,
   options: TranscriptEventAppendOptions = {},
   projection?: { scheduleProjectionReconcile: false; onProjectionReconcileNeeded: () => void },
+  view?: TranscriptWriteViewGuard,
 ): Result<TranscriptWriteSnapshot<TranscriptEventAppendResult>, TranscriptAppendRefusal> {
   assertNonMessageTranscriptEvent(event);
   return runTranscriptWriteSnapshotSync(
@@ -426,6 +434,7 @@ export function appendTranscriptEventSnapshotSync(
     },
     options.beforeCommitInTransaction,
     options.expectedMutationAt,
+    view,
   );
 }
 
@@ -437,14 +446,18 @@ function runTranscriptWriteSnapshotSync<T>(
   ) => T,
   beforeCommitInTransaction?: () => void,
   expectedMutationAt?: number | null,
+  view?: TranscriptWriteViewGuard,
 ): Result<TranscriptWriteSnapshot<T>, TranscriptAppendRefusal> {
   const fencedScope = withOwnedSessionTranscriptWriterFence(scope);
   const resolved = resolveSqliteTranscriptScope(fencedScope);
+  let connection: DatabaseSync | undefined;
   const result = runOpenClawAgentWriteTransaction<
     Result<TranscriptWriteSnapshot<T>, TranscriptAppendRefusal>
   >(
     (database) => {
+      connection = database.db;
       beforeCommitInTransaction?.();
+      view?.assertCurrent();
       assertOwnedTranscriptWriteCommit(fencedScope);
       const fresh = readSessionEntryRow(database, resolved.sessionKey, "list");
       const refusal = resolveTranscriptAppendRefusal(fresh?.entry, resolved, fencedScope);
@@ -457,6 +470,7 @@ function runTranscriptWriteSnapshotSync<T>(
       }
       const lifecycleRevision = fresh?.entry.lifecycleRevision;
       const value = operation(database, resolved);
+      view?.assertCurrent();
       assertOwnedTranscriptWriteCommit(fencedScope);
       return ok({
         result: value,
@@ -468,6 +482,10 @@ function runTranscriptWriteSnapshotSync<T>(
     toDatabaseOptions(resolved),
     { operationLabel: "session.transcript.write-snapshot" },
   );
+  // A savepoint can return while its enclosing transaction still owns rollback.
+  if (result.ok && connection && hasSqlitePostCommitScope(connection)) {
+    view?.onPendingTransaction(connection);
+  }
   if (fencedScope.expectedWriterRunId !== undefined && !result.ok) {
     throw new SessionTranscriptWriterClaimReboundError(result.error);
   }
@@ -522,6 +540,7 @@ export function appendTranscriptMessageSnapshotSync<TMessage>(
     scheduleProjectionReconcile?: boolean;
     onProjectionReconcileNeeded?: () => void;
   },
+  view?: TranscriptWriteViewGuard,
 ): Result<TranscriptMessageWriteSnapshot<TMessage>, TranscriptAppendRefusal> {
   const snapshot = runTranscriptWriteSnapshotSync(
     scope,
@@ -548,6 +567,7 @@ export function appendTranscriptMessageSnapshotSync<TMessage>(
     },
     undefined,
     options.expectedMutationAt,
+    view,
   );
   if (!snapshot.ok) {
     return snapshot;
