@@ -285,11 +285,19 @@ export function loadOpenClawPluginsCore(
         context.normalized.entries[normalizePluginPolicyId(manifest.id)] ?? {};
       const preparedConfig: PreparedPluginConfig = { input: JSON.stringify(pluginConfig) };
       const degradedPlugin = findActiveDegradedPlugin(manifest.id);
+      // Control UI builds apply through the UI-only plugins.controlUi.reload owner. An in-place
+      // `openclaw plugins build` rewrites controlUi and the byte-derived schemaCacheKey, which must
+      // not force an unrelated backend replacement; configSchema is still compared by value.
+      const {
+        controlUi: _controlUi,
+        schemaCacheKey: _schemaCacheKey,
+        ...runtimeManifest
+      } = manifest;
       const signatureInputs = [
         candidate.source,
         candidate.origin,
         [installOwner, installOwner ? context.installRecords[installOwner] : undefined],
-        manifest,
+        runtimeManifest,
         activation,
         entryPolicy,
         degradedPlugin && degradedPluginMatchesRoot(degradedPlugin, candidate.rootDir)
