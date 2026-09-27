@@ -3,7 +3,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAutoCleanupTempDirTracker } from "../../../test/helpers/temp-dir.js";
 import { registerAgentWorkspaceAccess } from "../../agents/workspace-access.js";
-import { root as openSafeRoot, FsSafeError } from "../../infra/fs-safe.js";
+import { root as openSafeRoot } from "../../infra/fs-safe.js";
 import { resolveLocalSessionWorkspaceRoot, sessionsFilesHandlers } from "./sessions-files.js";
 import {
   createSessionFilesHandlerInvoker,
@@ -74,7 +74,8 @@ describe("sessions.files preview formats", () => {
     fs.symlinkSync("result.json", path.join(remote, "result-link.json"));
     fs.writeFileSync(path.join(remote, "result.json"), '{"total":46}');
     fs.writeFileSync(path.join(remote, "large.txt"), "x".repeat(256 * 1024 + 1));
-    const owner = await openSafeRoot(remote);
+    const owner = await openSafeRoot(remote, { symlinks: "reject" });
+    let includeFileTypes = true;
     const ownerPath = (filePath: string) => path.relative(workspaceRoot, filePath);
     const readFile = vi.fn(
       async ({ filePath, maxBytes }: { filePath: string; maxBytes?: number }) =>
@@ -87,17 +88,14 @@ describe("sessions.files preview formats", () => {
           throw new Error("Unexpected non-CAS write");
         },
         stat: async ({ filePath }) => {
-          const stat = await owner.stat(ownerPath(filePath)).catch((error: unknown) => {
-            if (error instanceof FsSafeError && error.code === "not-found") {
-              return null;
-            }
-            throw error;
+          const stat = fs.lstatSync(path.join(remote, ownerPath(filePath)), {
+            throwIfNoEntry: false,
           });
           if (!stat) {
             return null;
           }
           return {
-            type: stat.isFile ? "file" : "directory",
+            type: stat.isFile() ? "file" : stat.isDirectory() ? "directory" : "other",
             size: stat.size,
             mtimeMs: stat.mtimeMs,
           };
@@ -106,7 +104,7 @@ describe("sessions.files preview formats", () => {
           (await owner.list(ownerPath(filePath), { withFileTypes: true })).map((entry) => ({
             name: entry.name,
             isDirectory: entry.isDirectory,
-            isFile: entry.isFile,
+            isFile: includeFileTypes ? entry.isFile : undefined,
             size: entry.size,
             mtimeMs: entry.mtimeMs,
           })),
@@ -134,6 +132,17 @@ describe("sessions.files preview formats", () => {
       "result.json",
     ]);
     expect(listed.gitCheckout).toBeUndefined();
+    includeFileTypes = false;
+    // Without listing types, the provider stat still distinguishes symlinks.
+    const legacyListing = expectOkPayload(
+      await invokeSessionFilesHandler("sessions.files.list", {
+        sessionKey: "agent:main:main",
+      }),
+    );
+    expect(legacyListing.browser.entries.map((entry: { name: string }) => entry.name)).toEqual([
+      "large.txt",
+      "result.json",
+    ]);
     expect(resolveLocalSessionWorkspaceRoot({ sessionKey: "agent:main:main" })).toBeUndefined();
     const reveal = expectOkPayload(
       await invokeSessionFilesHandler("sessions.files.reveal", {

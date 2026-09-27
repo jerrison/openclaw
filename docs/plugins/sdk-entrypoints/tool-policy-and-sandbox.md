@@ -77,8 +77,13 @@ contract that makes the property required.
 `SandboxContext.fsBridge.readDirectory` returns directory entry records. Providers
 may include `isFile`, `size`, and `mtimeMs`
 from their no-follow directory listing. File browsers use this metadata without
-an additional stat request for each child; providers that omit size or time keep
-the existing stat-based path. `isFile: false` with `isDirectory: false` identifies
+an additional stat request for each child; providers that omit any of these fields
+use the stat-based path. Unknown file types are never inferred from `isDirectory`. `isFile: false` with `isDirectory: false` identifies
 an entry such as a symlink that the browser should not treat as a regular file.
 Listing metadata never grants permission to read an entry. File reads continue
 to enforce the provider's path policy, byte limits, and active workspace binding.
+
+Upgrade paired nodes with the Gateway to get no-follow file types in directory
+listings. Older nodes still support regular-file previews and directory listings
+without symlinks. A symlink can make an older node reject the listing during the
+stat fallback; that error is surfaced rather than shown as an empty directory.

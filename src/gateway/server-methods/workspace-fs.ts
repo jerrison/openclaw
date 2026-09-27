@@ -111,9 +111,9 @@ export async function listWorkspacePath(
       // Use listing metadata when supplied. Re-statting every child adds a
       // network round trip per entry and rejects an entire directory on symlinks.
       const stat =
-        entry.size !== undefined && entry.mtimeMs !== undefined
+        entry.isFile !== undefined && entry.size !== undefined && entry.mtimeMs !== undefined
           ? {
-              isFile: entry.isFile ?? !entry.isDirectory,
+              isFile: entry.isFile,
               isDirectory: entry.isDirectory,
               size: entry.size,
               mtimeMs: entry.mtimeMs,
