@@ -44,10 +44,6 @@ const registeredStatefulBindingTargetDrivers = resolveGlobalMap<
   StatefulBindingTargetDriver
 >(Symbol.for("openclaw.statefulBindingTargetDrivers"), "plugin-registry");
 
-function listStatefulBindingTargetDrivers(): StatefulBindingTargetDriver[] {
-  return [...registeredStatefulBindingTargetDrivers.values()];
-}
-
 export function registerStatefulBindingTargetDriver(
   driver: StatefulBindingTargetDriver,
 ): () => void {
@@ -72,11 +68,7 @@ export function registerStatefulBindingTargetDriver(
 }
 
 export function getStatefulBindingTargetDriver(id: string): StatefulBindingTargetDriver | null {
-  const normalizedId = id.trim();
-  if (!normalizedId) {
-    return null;
-  }
-  return registeredStatefulBindingTargetDrivers.get(normalizedId) ?? null;
+  return registeredStatefulBindingTargetDrivers.get(id.trim()) ?? null;
 }
 
 export async function resolveStatefulBindingTargetBySessionKey(params: {
@@ -93,7 +85,7 @@ export async function resolveStatefulBindingTargetBySessionKey(params: {
   }
   // Session keys are globally opaque to callers. Ask each registered driver so
   // channel-specific encodings stay private to their owner.
-  for (const driver of listStatefulBindingTargetDrivers()) {
+  for (const driver of [...registeredStatefulBindingTargetDrivers.values()]) {
     const bindingTarget = await driver.resolveTargetBySessionKey?.({
       cfg: params.cfg,
       sessionKey,
