@@ -96,10 +96,13 @@ export function authorizeConfigWriteShared<TChannelId extends string>(params: {
   }
   const target = params.target;
   // Check the origin first so denial reporting preserves the initiating boundary.
-  for (const [kind, scope] of [
+  const scopes: Array<
+    readonly ["origin" | "target", ConfigWriteScopeLike<TChannelId> | undefined]
+  > = [
     ["origin", params.origin],
     ["target", target && target.kind !== "global" ? target.scope : undefined],
-  ] as const) {
+  ];
+  for (const [kind, scope] of scopes) {
     if (
       scope?.channelId &&
       !resolveChannelConfigWritesShared({

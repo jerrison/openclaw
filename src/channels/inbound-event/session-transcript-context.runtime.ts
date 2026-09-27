@@ -137,16 +137,23 @@ export async function mergeSessionTranscriptContext(params: {
     ...(options?.minTimestampMs !== undefined ? { minTimestampMs: options.minTimestampMs } : {}),
   });
   const labels = options?.senderLabels ?? { assistant: "Assistant", user: "User" };
-  const transcript: TranscriptMessage[] = turns.map((turn) => ({
-    entry: {
-      sender: `${labels[turn.role]}${turn.sourceChannel ? ` (${turn.sourceChannel})` : ""}`,
-      body: turn.text,
-      ...(turn.id ? { messageId: `session:${turn.id}` } : {}),
-      ...(turn.timestamp !== undefined ? { timestamp: turn.timestamp } : {}),
-    },
-    role: turn.role,
-    ...(turn.id ? { transcriptId: turn.id } : {}),
-  }));
+  const transcript = turns.map((turn) => {
+    const item: TranscriptMessage = {
+      entry: {
+        sender: `${labels[turn.role]}${turn.sourceChannel ? ` (${turn.sourceChannel})` : ""}`,
+        body: turn.text,
+      },
+      role: turn.role,
+    };
+    if (turn.id) {
+      item.transcriptId = turn.id;
+      item.entry.messageId = `session:${turn.id}`;
+    }
+    if (turn.timestamp !== undefined) {
+      item.entry.timestamp = turn.timestamp;
+    }
+    return item;
+  });
   if (transcript.length === 0) {
     return;
   }

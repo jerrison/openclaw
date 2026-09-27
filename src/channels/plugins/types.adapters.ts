@@ -284,7 +284,7 @@ export type ChannelHeartbeatAdapter = {
     signal: AbortSignal;
     assertPlatformSendAuthorized: () => void;
   }) => Promise<void> | void;
-  clearTyping?: ChannelHeartbeatAdapter["sendTyping"];
+  clearTyping?: NonNullable<ChannelHeartbeatAdapter["sendTyping"]>;
 };
 
 type ChannelDirectorySelfParams = {
@@ -365,7 +365,7 @@ export type ChannelCommandAdapter = {
   buildModelsMenuChannelData?: (params: {
     providers: Array<{ id: string; count: number }>;
   }) => ReplyPayload["channelData"] | null;
-  buildModelsProviderChannelData?: ChannelCommandAdapter["buildModelsMenuChannelData"];
+  buildModelsProviderChannelData?: NonNullable<ChannelCommandAdapter["buildModelsMenuChannelData"]>;
   buildModelsAddProviderChannelData?: (params: {
     providers: Array<{ id: string }>;
   }) => ReplyPayload["channelData"] | null;
