@@ -124,6 +124,48 @@ it.each(callbackCases)(
   },
 );
 
+it("restores the prior view after replaying another writer's provisional keyed user", async () => {
+  await withOpenClawTestState({ label: "manager-keyed-replay-rollback" }, async (state) => {
+    const target = await createTarget(state, "keyed-replay");
+    const writer = SessionManager.open(target, state.workspaceDir);
+    const seed = writer.appendMessage(message("seed"));
+    const manager = SessionManager.open(target, state.workspaceDir);
+    const keyed = { ...message("keyed user"), idempotencyKey: "replayed-user" };
+    const durableBefore = loadTranscriptEventsSync(target);
+    const beforeReplay = view(manager);
+    const refusal = new Error("refuse enclosing transaction after keyed replay");
+    let caught: unknown;
+    try {
+      runOpenClawAgentWriteTransaction(
+        () => {
+          const keyedId = writer.appendMessage(keyed);
+          const replay = manager.appendMessageWithTranscriptAnchor(keyed);
+          expect(replay).toMatchObject({ entryId: keyedId, appended: false });
+          expect(manager.getBranch()).toMatchObject([
+            { id: seed, message: { content: "seed" } },
+            { id: keyedId, parentId: seed, message: { content: "keyed user" } },
+          ]);
+          throw refusal;
+        },
+        {
+          agentId: target.agentId,
+          env: target.env,
+          path: resolveSessionTranscriptDatabasePath(target),
+        },
+      );
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBe(refusal);
+    expect(loadTranscriptEventsSync(target)).toEqual(durableBefore);
+    expect(view(manager)).toEqual(beforeReplay);
+    expect(view(manager)).toEqual(view(SessionManager.open(target)));
+    const next = manager.appendMessage(message("after replay rollback"));
+    expect(manager.getEntry(next)?.parentId).toBe(seed);
+    expect(view(manager)).toEqual(view(SessionManager.open(target)));
+  });
+});
+
 it("restores the live view while a callback-started hydration is still pending", async () => {
   await withOpenClawTestState({ label: "manager-pending-hydration-rollback" }, async (state) => {
     const target = await createTarget(state, "pending-hydration", true);
