@@ -223,8 +223,11 @@ export async function runCodexNodeExecServer(params: {
     await mkdir(codexHome, { recursive: true, mode: 0o700 });
     let githubEnv: Record<string, string> = {};
     if (params.github) {
-      const { managedGitHubIdentityEnvironment, writeManagedGitHubProfileFiles } =
-        await import("openclaw/plugin-sdk/github-worker-runtime");
+      const {
+        isGitHubCloudHost,
+        managedGitHubIdentityEnvironment,
+        writeManagedGitHubProfileFiles,
+      } = await import("openclaw/plugin-sdk/github-worker-runtime");
       const profileDir = path.join(dir, "github");
       const host = params.github.host ?? "github.com";
       await writeManagedGitHubProfileFiles(profileDir, { ...params.github, host });
@@ -238,7 +241,7 @@ export async function runCodexNodeExecServer(params: {
           ],
         }),
         GH_HOST: host,
-        ...(host === "github.com"
+        ...(isGitHubCloudHost(host)
           ? { GH_TOKEN: params.github.token, GH_ENTERPRISE_TOKEN: "" }
           : { GH_TOKEN: "", GH_ENTERPRISE_TOKEN: params.github.token }),
         GITHUB_TOKEN: "",
