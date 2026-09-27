@@ -5,6 +5,7 @@ import {
   type CoreGatewayHandlerFamily,
 } from "../methods/core-method-policy.js";
 import type { GatewayMethodRegistryView } from "../methods/descriptor.js";
+import { gatewayClientUploadPolicyError } from "../upload-policy.js";
 import { createLazyCoreHandlers } from "./lazy-core-handlers.js";
 import type { GatewayRequestHandlers } from "./types.js";
 
@@ -189,11 +190,11 @@ export const coreGatewayHandlers: GatewayRequestHandlers = Object.fromEntries(
 
 // Canonical receipt owners distinguish replay from new input after authorization.
 // Overrides retain both router fences; a method name alone cannot delegate admission.
-export function defersUploadAdmissionToReceiptOwner(
-  method: string,
+export function gatewayRouterUploadPolicyError(
+  params: Parameters<typeof gatewayClientUploadPolicyError>[0],
   registry: Pick<GatewayMethodRegistryView, "getHandler">,
-): boolean {
-  switch (method) {
+) {
+  switch (params.method) {
     case "agent":
     case "chat.send":
     case "sessions.send":
@@ -201,8 +202,9 @@ export function defersUploadAdmissionToReceiptOwner(
     case "sessions.create":
     case "send":
     case "message.action":
-      return registry.getHandler(method) === coreGatewayHandlers[method];
-    default:
-      return false;
+      if (registry.getHandler(params.method) === coreGatewayHandlers[params.method]) {
+        return null;
+      }
   }
+  return gatewayClientUploadPolicyError(params);
 }
