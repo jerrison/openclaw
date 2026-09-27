@@ -15,7 +15,10 @@ import {
 } from "../../../packages/gateway-protocol/src/index.js";
 import { sendDurableMessageBatchCore } from "../../channels/message/runtime.js";
 import type { ConversationReadInvocationOrigin } from "../../channels/plugins/conversation-read-origin.js";
-import { dispatchChannelMessageAction } from "../../channels/plugins/message-action-dispatch.js";
+import {
+  dispatchChannelMessageAction,
+  isFencedProviderReadAction,
+} from "../../channels/plugins/message-action-dispatch.js";
 import type { ChannelPlugin } from "../../channels/plugins/types.public.js";
 import { resolveChannelThreadAddressing } from "../../channels/thread-addressing.js";
 import {
@@ -95,7 +98,11 @@ import {
   createGatewayInflightUnavailableFailure,
   scheduleDeliveredSourceReplyTranscriptMirror,
 } from "./message-operation-result.js";
-import { resolveMessageOperationAccountRoute } from "./send-account-route.js";
+import {
+  parseMessageOperationRoute,
+  resolveMessageOperationAccountRoute,
+  type MessageOperationRoute,
+} from "./send-account-route.js";
 import {
   resolveGatewayOutboundTarget,
   resolveMessageActionRuntimeConfig,
@@ -105,12 +112,6 @@ import type { GatewayRequestContext, GatewayRequestHandlers, RespondFn } from ".
 import { assertValidParams } from "./validation.js";
 
 type MessageOperationPrefix = "message.action" | "poll" | "send";
-
-type MessageOperationRoute = {
-  channel: string;
-  accountId: string;
-  requestScope: string;
-};
 
 type MessageOperationRouteBinding = {
   key: string;
@@ -228,33 +229,6 @@ function resolveGatewayInflightRequest(params: {
     idempotencyKey: idem,
     respond: params.respond,
   });
-}
-
-function parseMessageOperationRoute(
-  requestScope: string | undefined,
-): MessageOperationRoute | undefined {
-  if (!requestScope) {
-    return undefined;
-  }
-  try {
-    const parsed: unknown = JSON.parse(requestScope);
-    if (
-      !Array.isArray(parsed) ||
-      parsed.length !== 2 ||
-      typeof parsed[0] !== "string" ||
-      typeof parsed[1] !== "string"
-    ) {
-      return undefined;
-    }
-    const channel = normalizeMessageChannel(parsed[0]);
-    const accountId = normalizeOptionalAccountId(parsed[1]);
-    if (!channel || channel !== parsed[0] || !accountId || accountId !== parsed[1]) {
-      return undefined;
-    }
-    return { channel, accountId, requestScope };
-  } catch {
-    return undefined;
-  }
 }
 
 function resolveMessageOperationRouteBinding(params: {
@@ -902,6 +876,10 @@ export const sendHandlers: GatewayRequestHandlers = {
                   });
                   payload = result.payload;
                 } else {
+                  if (!isFencedProviderReadAction(request.action)) {
+                    await downstreamMessageActionAuthorization?.deliveryAttempt?.beforeAttempt();
+                    assertDirectAdapterHandoff?.();
+                  }
                   const handled = await dispatchChannelMessageAction(actionContext);
                   if (handled) {
                     payload = extractToolPayload(handled);
@@ -1204,6 +1182,8 @@ export const sendHandlers: GatewayRequestHandlers = {
           if (!authorize()) {
             return createGatewayInflightAuthorityFailure({ context, dedupeKey, channel });
           }
+          await messageActionAuthorization?.deliveryAttempt?.beforeAttempt();
+          commitAgentRuntimeAuthority?.();
           const send = await sendDurableMessageBatchCore(
             {
               cfg,
@@ -1292,13 +1272,14 @@ export const sendHandlers: GatewayRequestHandlers = {
     if (!assertValidParams(request, validatePollParams, "poll", respond)) {
       return;
     }
+    const messageActionAuthorization = resolveAgentRuntimeMessageActionAuthorization(client);
     const messageAuthority = createMessageActionRuntimeAuthority({
       client,
       context,
       respond,
       sessionMutationCommitGuard,
       request: { action: "poll", accountId: request.accountId, params: {} },
-      authorization: resolveAgentRuntimeMessageActionAuthorization(client),
+      authorization: messageActionAuthorization,
     });
     const messageActionConfig = resolveAgentRuntimeMessageActionConfig(client);
     const agentRuntimeAuthority = messageAuthority.agentRuntimeAuthority;
@@ -1392,6 +1373,8 @@ export const sendHandlers: GatewayRequestHandlers = {
           if (!authorize()) {
             return createGatewayInflightAuthorityFailure({ context, dedupeKey, channel });
           }
+          await messageActionAuthorization?.deliveryAttempt?.beforeAttempt();
+          commitAgentRuntimeAuthority?.();
           const result = await sendPoll({
             cfg,
             to: resolvedTarget.to,

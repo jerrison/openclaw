@@ -2,7 +2,8 @@ import { resolveChannelDefaultAccountId } from "../../channels/plugins/helpers.j
 import type { ChannelPlugin } from "../../channels/plugins/types.public.js";
 import type { OpenClawConfig } from "../../config/types.openclaw.js";
 import { validateExplicitMessageAccountSelection } from "../../infra/outbound/message-account-selection.js";
-import { normalizeAccountId } from "../../routing/session-key.js";
+import { normalizeAccountId, normalizeOptionalAccountId } from "../../routing/session-key.js";
+import { normalizeMessageChannel } from "../../utils/message-channel.js";
 
 export async function resolveMessageOperationAccountRoute(params: {
   cfg: OpenClawConfig;
@@ -38,4 +39,37 @@ export async function resolveMessageOperationAccountRoute(params: {
     effectiveAccountId,
     requestScope: JSON.stringify([params.channel, effectiveAccountId]),
   };
+}
+
+export type MessageOperationRoute = {
+  channel: string;
+  accountId: string;
+  requestScope: string;
+};
+
+export function parseMessageOperationRoute(
+  requestScope: string | undefined,
+): MessageOperationRoute | undefined {
+  if (!requestScope) {
+    return undefined;
+  }
+  try {
+    const parsed: unknown = JSON.parse(requestScope);
+    if (
+      !Array.isArray(parsed) ||
+      parsed.length !== 2 ||
+      typeof parsed[0] !== "string" ||
+      typeof parsed[1] !== "string"
+    ) {
+      return undefined;
+    }
+    const channel = normalizeMessageChannel(parsed[0]);
+    const accountId = normalizeOptionalAccountId(parsed[1]);
+    if (!channel || channel !== parsed[0] || !accountId || accountId !== parsed[1]) {
+      return undefined;
+    }
+    return { channel, accountId, requestScope };
+  } catch {
+    return undefined;
+  }
 }

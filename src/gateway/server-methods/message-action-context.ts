@@ -74,6 +74,9 @@ export function createMessageActionRuntimeAuthority(
     assertReadCurrent ??
     assertScheduledWriteCurrent ??
     params.authorization?.scheduled?.assertCurrent;
+  const assertDeliveryCurrent = !isFencedProviderReadAction(params.request.action)
+    ? params.authorization?.deliveryAttempt?.assertCurrent
+    : undefined;
   const scheduledPolicy =
     assertReadCurrent || assertScheduledWriteCurrent
       ? params.authorization?.scheduled?.policy
@@ -89,10 +92,11 @@ export function createMessageActionRuntimeAuthority(
       params.client,
       params.context,
       params.respond,
-      assertActionCurrent
+      assertActionCurrent || assertDeliveryCurrent
         ? () => {
             params.sessionMutationCommitGuard?.();
-            assertActionCurrent();
+            assertActionCurrent?.();
+            assertDeliveryCurrent?.();
           }
         : params.sessionMutationCommitGuard,
     ),

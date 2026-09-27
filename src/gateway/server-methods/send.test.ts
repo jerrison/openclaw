@@ -10,15 +10,10 @@ import {
   GatewayErrorDetailCodes,
 } from "../../../packages/gateway-protocol/src/index.js";
 import { createDeferred } from "../../../test/helpers/promise.js";
-import { createOperationalRunInstanceRef } from "../../agents/admitted-run-context.js";
 import { jsonResult } from "../../agents/tools/common.js";
 import type { ChannelPlugin } from "../../channels/plugins/types.public.js";
 import { createChannelPartialDeliveryError } from "../../channels/turn/delivery-result.js";
 import type { SessionTranscriptAppendResult } from "../../config/sessions/transcript.js";
-import {
-  claimAgentRunDelegatedAuthority,
-  releaseAgentRunDelegatedAuthority,
-} from "../../infra/agent-run-registry.js";
 import { OutboundDeliveryError } from "../../infra/outbound/deliver-types.js";
 import { resolveOutboundTargetWithPlugin } from "../../infra/outbound/targets-resolve-shared.js";
 import { buildOutboundMediaLoadOptions } from "../../media/load-options.js";
@@ -34,18 +29,17 @@ import {
 import { captureEnv, setTestEnvValue } from "../../test-utils/env.js";
 import { withOpenClawTestState } from "../../test-utils/openclaw-test-state.js";
 import { createSessionConversationTestRegistry } from "../../test-utils/session-conversation-registry.js";
-import { createAgentRuntimeApprovalAuthorityValidator } from "../agent-runtime-approval-authority.js";
 import { bindInProcessSessionDeliveryGeneration } from "../in-process-session-delivery.js";
-import {
-  mintMessageActionTurnCapability,
-  revokeMessageActionTurnCapability,
-} from "../message-action-turn-capability.js";
+import { revokeMessageActionTurnCapability } from "../message-action-turn-capability.js";
 import { DEDUPE_MAX, DEDUPE_TTL_MS } from "../server-constants.js";
 import { startGatewayMaintenanceTimers } from "../server-maintenance.js";
 import { createGatewayMaintenanceStateForTest } from "../test-helpers.maintenance-state.js";
 import {
   agentRuntimeClientForTests as agentRuntimeClient,
   createTelegramSourceSendRequest,
+  createMessageActionTurnClientForTests,
+  createDiscordTestConfig,
+  createDiscordSourceConfig,
   directCliClientForTests as directCliClient,
   firstRespondCall,
   messageActionContextFromSessionKeyForTests,
@@ -397,38 +391,6 @@ async function runTelegramTerminalAction(params: {
       },
     },
     params.context,
-  );
-}
-
-function createDiscordTestConfig(
-  token:
-    | string
-    | {
-        source: "env";
-        provider: "default";
-        id: "DISCORD_BOT_TOKEN_DRCLAW";
-      },
-  enabled = false,
-) {
-  return {
-    channels: {
-      discord: {
-        ...(enabled ? { enabled: true } : {}),
-        accounts: { drclaw: { token } },
-      },
-    },
-    ...(enabled ? { plugins: { allow: ["discord"] } } : {}),
-  };
-}
-
-function createDiscordSourceConfig(enabled = false) {
-  return createDiscordTestConfig(
-    {
-      source: "env",
-      provider: "default",
-      id: "DISCORD_BOT_TOKEN_DRCLAW",
-    },
-    enabled,
   );
 }
 
@@ -1279,28 +1241,10 @@ describe("gateway send mirroring", () => {
       },
     );
     const sessionKey = "agent:main:slack:channel:C1";
-    const operationalRunInstance = createOperationalRunInstanceRef("read-turn-revocation");
-    const delegatedAuthority = claimAgentRunDelegatedAuthority(operationalRunInstance);
-    const turnCapability = mintMessageActionTurnCapability({
-      agentId: "main",
-      runId: operationalRunInstance.runId,
+    const { client, context, turnCapability, close } = createMessageActionTurnClientForTests({
       sessionKey,
+      runId: "read-turn-revocation",
     });
-    const client = {
-      internal: {
-        agentRuntimeIdentity: {
-          kind: "agentRuntime" as const,
-          agentId: "main",
-          sessionKey,
-          operationalRunInstance,
-          delegatedAuthority: { kind: "local" as const, ...delegatedAuthority },
-          messageActionContext: {
-            ...messageActionContextFromSessionKeyForTests(sessionKey),
-            turnCapability,
-          },
-        },
-      },
-    };
     try {
       const request = runMessageActionRequest(
         {
@@ -1311,10 +1255,7 @@ describe("gateway send mirroring", () => {
           idempotencyKey: "read-turn-revocation",
         },
         client,
-        {
-          ...makeContext(),
-          validateAgentRuntimeApprovalAuthority: createAgentRuntimeApprovalAuthorityValidator(),
-        } as GatewayRequestContext,
+        context,
       );
       await entered.promise;
       revokeMessageActionTurnCapability(turnCapability);
@@ -1325,10 +1266,56 @@ describe("gateway send mirroring", () => {
       expect(providerRequest).not.toHaveBeenCalled();
     } finally {
       resume.resolve(null);
-      revokeMessageActionTurnCapability(turnCapability);
-      releaseAgentRunDelegatedAuthority(delegatedAuthority);
+      close();
     }
   });
+
+  it.each(["message.action", "send", "poll"] as const)(
+    "refuses legacy cron %s before delivery when its durable fence fails",
+    async (method) => {
+      const sessionKey = "agent:main:slack:channel:C1";
+      const beforeDeliveryAttempt = vi.fn(async () => {
+        throw new Error("occurrence delivery fence unavailable");
+      });
+      const { client, context, close } = createMessageActionTurnClientForTests({
+        sessionKey,
+        runId: "scheduled-delivery-fence",
+        deliveryAttempt: { beforeAttempt: beforeDeliveryAttempt, assertCurrent: () => {} },
+      });
+      try {
+        const request = {
+          channel: "slack",
+          ...(method === "poll" ? {} : { sessionKey }),
+          idempotencyKey: `scheduled-fence-${method}`,
+        };
+        const respond = vi.fn();
+        await invokeGatewayMessageMethod({
+          method,
+          client,
+          context,
+          respond,
+          request: {
+            ...request,
+            ...(method === "message.action"
+              ? { action: "send", params: { to: "C1", message: "report" } }
+              : method === "send"
+                ? { to: "C1", message: "report" }
+                : { to: "C1", question: "Ship?", options: ["Yes", "No"] }),
+          },
+        });
+        expect(firstRespondCall(respond)[0]).toBe(false);
+        expect(firstRespondCall(respond)[2]?.message).toContain(
+          "occurrence delivery fence unavailable",
+        );
+        expect(beforeDeliveryAttempt).toHaveBeenCalledOnce();
+        expect(mocks.dispatchChannelMessageAction).not.toHaveBeenCalled();
+        expect(mocks.deliverOutboundPayloads).not.toHaveBeenCalled();
+        expect(mocks.sendPoll).not.toHaveBeenCalled();
+      } finally {
+        close();
+      }
+    },
+  );
 
   it("does not send after turn capability closes while delegated authority remains active", async () => {
     const enteredDelivery = createDeferred<null>();
@@ -1344,32 +1331,15 @@ describe("gateway send mirroring", () => {
       },
     );
     const sessionKey = "agent:main:slack:channel:C1";
-    const operationalRunInstance = createOperationalRunInstanceRef("run-turn-capability-race");
-    const delegatedAuthority = claimAgentRunDelegatedAuthority(operationalRunInstance);
-    const messageActionTurnCapability = mintMessageActionTurnCapability({
-      agentId: "main",
-      runId: operationalRunInstance.runId,
+    const {
+      client,
+      context,
+      turnCapability: messageActionTurnCapability,
+      close,
+    } = createMessageActionTurnClientForTests({
       sessionKey,
+      runId: "run-turn-capability-race",
     });
-    const client = {
-      internal: {
-        agentRuntimeIdentity: {
-          kind: "agentRuntime" as const,
-          agentId: "main",
-          sessionKey,
-          operationalRunInstance,
-          delegatedAuthority: { kind: "local" as const, ...delegatedAuthority },
-          messageActionContext: {
-            ...messageActionContextFromSessionKeyForTests(sessionKey),
-            turnCapability: messageActionTurnCapability,
-          },
-        },
-      },
-    };
-    const context = {
-      ...makeContext(),
-      validateAgentRuntimeApprovalAuthority: createAgentRuntimeApprovalAuthorityValidator(),
-    } as GatewayRequestContext;
 
     try {
       const request = runSendWithClient(
@@ -1392,8 +1362,7 @@ describe("gateway send mirroring", () => {
       expect(firstRespondCall(respond)[2]?.message).toContain("authority is no longer active");
       expect(platformSend).not.toHaveBeenCalled();
     } finally {
-      revokeMessageActionTurnCapability(messageActionTurnCapability);
-      releaseAgentRunDelegatedAuthority(delegatedAuthority);
+      close();
     }
   });
 
