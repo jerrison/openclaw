@@ -12,8 +12,8 @@ import plugin from "../index.js";
 
 const registerMemoryCapability = vi.fn<OpenClawPluginApi["registerMemoryCapability"]>();
 plugin.register(createTestPluginApi({ registerMemoryCapability }));
-const listArtifacts = registerMemoryCapability.mock.calls[0]?.[0].publicArtifacts?.listArtifacts;
-if (!listArtifacts) {
+const publicArtifacts = registerMemoryCapability.mock.calls[0]?.[0].publicArtifacts;
+if (!publicArtifacts) {
   throw new Error("expected memory-core to register public artifacts");
 }
 
@@ -68,7 +68,7 @@ describe("memory-core public artifacts", () => {
       },
     };
 
-    const artifacts = await listArtifacts({ cfg });
+    const artifacts = await publicArtifacts.listArtifacts({ cfg });
     const eventArtifact = artifacts.find((artifact) => artifact.kind === "event-log");
     if (!eventArtifact) {
       throw new Error("expected memory event export");
@@ -124,6 +124,6 @@ describe("memory-core public artifacts", () => {
       },
     };
 
-    await expect(listArtifacts({ cfg })).resolves.toStrictEqual([]);
+    await expect(publicArtifacts.listArtifacts({ cfg })).resolves.toStrictEqual([]);
   });
 });
