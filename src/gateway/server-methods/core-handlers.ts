@@ -151,7 +151,6 @@ const CORE_GATEWAY_HANDLER_MODULES = {
   talk: () => import("../talk/handlers/index.js").then((module) => module.talkHandlers),
   // Mode synchronization does not depend on loading speech or realtime providers.
   "talk-mode": () => import("../talk/handlers/mode.js").then((module) => module.talkModeHandlers),
-  tasks: () => import("./tasks.js").then((module) => module.tasksHandlers),
   "task-suggestions": () =>
     import("./task-suggestions.js").then((module) => module.taskSuggestionsHandlers),
   "tools-catalog": () => import("./tools-catalog.js").then((module) => module.toolsCatalogHandlers),
@@ -188,11 +187,22 @@ export const coreGatewayHandlers: GatewayRequestHandlers = Object.fromEntries(
   ),
 );
 
-// The canonical agent owner reconciles authorized receipts before admitting new input.
-// Overrides retain the router fence; a method name alone cannot delegate admission.
-export function defersAgentUploadAdmission(
+// Canonical receipt owners distinguish replay from new input after authorization.
+// Overrides retain both router fences; a method name alone cannot delegate admission.
+export function defersUploadAdmissionToReceiptOwner(
   method: string,
   registry: Pick<GatewayMethodRegistryView, "getHandler">,
 ): boolean {
-  return method === "agent" && registry.getHandler(method) === coreGatewayHandlers.agent;
+  switch (method) {
+    case "agent":
+    case "chat.send":
+    case "sessions.send":
+    case "sessions.steer":
+    case "sessions.create":
+    case "send":
+    case "message.action":
+      return registry.getHandler(method) === coreGatewayHandlers[method];
+    default:
+      return false;
+  }
 }

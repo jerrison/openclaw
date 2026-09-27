@@ -35,7 +35,6 @@ import { registerChatAbortController, resolveChatRunExpiresAtMs } from "../chat-
 import { ExpectedProfileMismatchError } from "../expected-profile.js";
 import { retainGatewayOperatorRun } from "../operator-run-cancellation.js";
 import { PENDING_CHAT_SEND_DEDUPE_PREFIX, type DedupeEntry } from "../server-shared.js";
-import { captureGatewayClientUploadCommitGuard } from "../upload-policy.js";
 import {
   buildAbortedChatSendPayload,
   readPreRegisteredRun,
@@ -64,6 +63,7 @@ import {
   type PreparedChatSendSession,
 } from "./chat-send-session.js";
 import {
+  admitChatSendUploads,
   assertChatSendExclusiveAdmission,
   createChatSendWorkAdmission,
   releaseChatSendCallerAuthority,
@@ -151,6 +151,10 @@ export async function admitChatSend(
   }
   if (!request.goalOperation && respondChatSendRetry(params)) {
     return { ok: false as const };
+  }
+  const uploadAdmission = admitChatSendUploads({ params: p, client, context, respond });
+  if (!uploadAdmission.ok) {
+    return uploadAdmission;
   }
   // Keep the run abortable while lifecycle mutation owns the session. Admission
   // must reject an expired/missing reservation instead of reviving evicted work.
@@ -684,12 +688,7 @@ export async function admitChatSend(
       rejectSessionRoutingChanged,
       retainGatewayWorkAdmission: retainedWork.retain,
       setPendingInputCleanup: retainedWork.setPendingInputCleanup,
-      assertClientUploadAllowed: captureGatewayClientUploadCommitGuard({
-        method: "chat.send",
-        requestParams: p,
-        client,
-        context,
-      }),
+      assertClientUploadAllowed: uploadAdmission.assertClientUploadAllowed,
       assertWorkAdmissionCurrent: () => {
         const queued = context.chatQueuedTurns.get(clientRunId);
         // Collect retires source cancellation while retaining the original

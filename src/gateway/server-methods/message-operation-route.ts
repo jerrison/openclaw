@@ -9,6 +9,7 @@ import { normalizeOptionalAccountId } from "../../routing/session-key.js";
 import { createDeferredCore } from "../../shared/deferred.js";
 import { normalizeMessageChannel } from "../../utils/message-channel.js";
 import { DEDUPE_MAX, DEDUPE_TTL_MS } from "../server-constants.js";
+import { SessionMutationAuthorizationChangedError } from "../session-mutation-authorization-error.js";
 import { formatForLog } from "../ws-log.js";
 import {
   resolveGatewayInflightRequest as resolveIdempotentGatewayRequest,
@@ -211,32 +212,30 @@ function resolveMessageOperationRouteBinding(params: {
   };
 }
 
-function bindMessageOperationRoute(params: {
+/** Validate under the route lock; publish only for accepted replay or newly admitted input. */
+function prepareMessageOperationRouteBinding(params: {
   context: GatewayRequestContext;
   binding: MessageOperationRouteBinding | undefined;
   requestScope: string;
-}): boolean {
-  if (!params.binding) {
-    return true;
+}): (() => void) | undefined {
+  const binding = params.binding;
+  if (!binding) {
+    return () => undefined;
   }
   const bindings = getMessageOperationRouteBindings(params.context);
-  const existing = bindings.get(params.binding.key);
-  if (existing) {
-    if (existing.requestScope !== params.requestScope) {
-      return false;
-    }
-    bindings.set(params.binding.key, { ...existing, ts: Date.now() });
-    return true;
+  const existing = bindings.get(binding.key);
+  if (existing && existing.requestScope !== params.requestScope) {
+    return undefined;
   }
-  // Bind the canonical route before dispatch so retries can replay without
-  // consulting mutable defaults or plugin/account configuration.
-  bindings.set(params.binding.key, {
-    ts: Date.now(),
-    requestScope: params.requestScope,
-    retainUntilSettled: false,
-  });
-  pruneMessageOperationRouteBindings(bindings, Date.now());
-  return true;
+  return () => {
+    bindings.set(
+      binding.key,
+      existing
+        ? { ...existing, ts: Date.now() }
+        : { ts: Date.now(), requestScope: params.requestScope, retainUntilSettled: false },
+    );
+    pruneMessageOperationRouteBindings(bindings, Date.now());
+  };
 }
 
 function refreshMessageOperationRouteBinding(params: {
@@ -324,6 +323,8 @@ export async function withMessageOperationRoute<
   routeAccountIds: (binding: MessageOperationRouteBinding | undefined) => readonly unknown[];
   conflictMessage: string;
   authorize?: () => boolean;
+  /** Input-only policy never replaces an already accepted receipt. */
+  assertNewInputAllowed?: () => void;
   /** Ephemeral scheduled reads must consult current provider policy on every invocation. */
   replayResults?: boolean;
   resolveChannel: (requestChannel: unknown) => Promise<T | undefined>;
@@ -354,6 +355,7 @@ export async function withMessageOperationRoute<
         }
       };
       assertCurrent();
+      params.assertNewInputAllowed?.();
       const result = await params.work({
         ...resolved,
         accountId: accountRoute.effectiveAccountId,
@@ -364,7 +366,11 @@ export async function withMessageOperationRoute<
       assertCurrent();
       params.respond(result.ok, result.payload, result.error, result.meta);
     } catch (error) {
-      respondGatewayInvalidRequest({ respond: params.respond, channel: resolved.channel, error });
+      respondMessageOperationAdmissionError({
+        respond: params.respond,
+        channel: resolved.channel,
+        error,
+      });
     }
     return;
   }
@@ -414,17 +420,20 @@ export async function withMessageOperationRoute<
         conflictMessage: params.conflictMessage,
       });
     } catch (error) {
-      respondGatewayInvalidRequest({ respond: params.respond, channel: resolved.channel, error });
+      respondMessageOperationAdmissionError({
+        respond: params.respond,
+        channel: resolved.channel,
+        error,
+      });
       return;
     }
-    if (
-      !bindMessageOperationRoute({
-        context: params.context,
-        binding,
-        requestScope: accountRoute.requestScope,
-      })
-    ) {
-      respondGatewayInvalidRequest({
+    const publishBinding = prepareMessageOperationRouteBinding({
+      context: params.context,
+      binding,
+      requestScope: accountRoute.requestScope,
+    });
+    if (!publishBinding) {
+      respondMessageOperationAdmissionError({
         respond: params.respond,
         channel: resolved.channel,
         error: "idempotency key is already bound to a different message route",
@@ -441,6 +450,7 @@ export async function withMessageOperationRoute<
       requestScope: accountRoute.requestScope,
     });
     if (inflight.kind === "handled") {
+      publishBinding();
       releaseLock();
       await inflight.done;
       return;
@@ -455,6 +465,17 @@ export async function withMessageOperationRoute<
       );
       return;
     }
+    try {
+      params.assertNewInputAllowed?.();
+    } catch (error) {
+      respondMessageOperationAdmissionError({
+        respond: params.respond,
+        channel: resolved.channel,
+        error,
+      });
+      return;
+    }
+    publishBinding();
     retainMessageOperationRouteBinding({
       context: params.context,
       binding,
@@ -483,12 +504,16 @@ export async function withMessageOperationRoute<
   }
 }
 
-function respondGatewayInvalidRequest(params: {
+function respondMessageOperationAdmissionError(params: {
   respond: RespondFn;
   channel: string;
   error: unknown;
 }): void {
-  params.respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, String(params.error)), {
+  const error =
+    params.error instanceof SessionMutationAuthorizationChangedError
+      ? params.error.error
+      : errorShape(ErrorCodes.INVALID_REQUEST, String(params.error));
+  params.respond(false, undefined, error, {
     channel: params.channel,
     error: formatForLog(params.error),
   });

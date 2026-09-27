@@ -1,7 +1,6 @@
 import { ErrorCodes, errorShape } from "../../../packages/gateway-protocol/src/index.js";
 import type { SessionGoalOperation } from "../../config/sessions/goals-operations.js";
 import type { ProviderReviewAcknowledgment } from "../../sessions/provider-review.js";
-import { gatewayClientUploadPolicyError } from "../upload-policy.js";
 import { admitChatSend } from "./chat-send-admission.js";
 import {
   respondChatSendAdmissionError,
@@ -41,16 +40,6 @@ export async function prepareAndAdmitChatSend(
     providerReviewAcknowledgment?: ProviderReviewAcknowledgment;
   },
 ) {
-  const uploadError = gatewayClientUploadPolicyError({
-    method: "chat.send",
-    requestParams: params,
-    client,
-    context,
-  });
-  if (uploadError) {
-    respond(false, undefined, uploadError);
-    return undefined;
-  }
   const assertCurrent =
     sessionMutationAuthorization || hasCurrentClientAuthority
       ? () => {

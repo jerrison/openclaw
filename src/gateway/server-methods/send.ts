@@ -154,6 +154,7 @@ export const sendHandlers: GatewayRequestHandlers = {
       ],
       conflictMessage: "message.action accountId does not match params.accountId",
       authorize: messageAuthority.agentRuntimeAuthority.hasActive,
+      assertNewInputAllowed: assertClientUploadAllowed,
       replayResults: messageAuthority.assertReadCurrent === undefined,
       resolveChannel: async (requestChannel) => {
         const resolved = await resolveRequestedChannel({
@@ -531,6 +532,7 @@ export const sendHandlers: GatewayRequestHandlers = {
       routeAccountIds: (binding) => [requestedAccountId, binding?.reservedRoute?.accountId],
       conflictMessage: "send account selections do not match",
       authorize: agentRuntimeAuthority.hasActive,
+      assertNewInputAllowed: assertClientUploadAllowed,
       resolveChannel: async (requestChannel) => {
         const resolved = await resolveRequestedChannel({
           requestChannel,

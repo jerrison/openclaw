@@ -47,7 +47,10 @@ import {
   type GatewayMethodRegistry,
 } from "./methods/registry.js";
 import { canSelectQuestion } from "./question-access.js";
-import { coreGatewayHandlers, defersAgentUploadAdmission } from "./server-methods/core-handlers.js";
+import {
+  coreGatewayHandlers,
+  defersUploadAdmissionToReceiptOwner,
+} from "./server-methods/core-handlers.js";
 import { authorizeAuthenticatedProfileForMethod } from "./server-methods/gateway-client-identity.js";
 import { prepareGatewayRequestHandler } from "./server-methods/lazy-core-handlers.js";
 import { authorizeGatewayMethod } from "./server-methods/method-authorization.js";
@@ -245,7 +248,7 @@ export async function authorizeGatewayRequestPreDispatch(params: {
     if (scopeAuthorization.error) {
       return { error: scopeAuthorization.error };
     }
-    const uploadError = defersAgentUploadAdmission(params.method, params.methodRegistry)
+    const uploadError = defersUploadAdmissionToReceiptOwner(params.method, params.methodRegistry)
       ? null
       : gatewayClientUploadPolicyError(params);
     if (uploadError) {
@@ -669,7 +672,7 @@ export async function handleGatewayRequest(
       const preparedHandler = await prepareGatewayRequestHandler(handler, entry);
       // Lazy preparation may yield across a hot config change. Keep the router fence
       // unless the canonical owner reconciles accepted input before new admission.
-      const uploadError = defersAgentUploadAdmission(req.method, methodRegistry)
+      const uploadError = defersUploadAdmissionToReceiptOwner(req.method, methodRegistry)
         ? null
         : gatewayClientUploadPolicyError(requestFacts);
       if (uploadError) {

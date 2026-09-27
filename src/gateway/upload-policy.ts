@@ -70,6 +70,7 @@ export function isGatewayUploadRequest(method: string, params: unknown): boolean
     case "agent":
     case "sessions.create":
     case "sessions.send":
+    case "sessions.steer":
     case "sessions.companion.ask":
       return hasAttachments(params);
     case "node.invoke":

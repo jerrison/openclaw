@@ -107,16 +107,6 @@ async function handleSessionSend(
   if (!assertValidParams(options.params, validateSessionsSendParams, method, options.respond)) {
     return;
   }
-  const uploadError = gatewayClientUploadPolicyError({
-    method: "sessions.send",
-    requestParams: options.params,
-    client: options.client,
-    context: options.context,
-  });
-  if (uploadError) {
-    options.respond(false, undefined, uploadError);
-    return;
-  }
   const p = options.params;
   const key = requireSessionKey(p.key, options.respond);
   if (!key) {
@@ -184,6 +174,18 @@ async function handleSessionSend(
     }
     respond(false, undefined, errorShape(ErrorCodes.INVALID_REQUEST, archivedSessionError));
     return;
+  }
+  if (!entry?.sessionId) {
+    const uploadError = gatewayClientUploadPolicyError({
+      method: "sessions.send",
+      requestParams: options.params,
+      client: options.client,
+      context: options.context,
+    });
+    if (uploadError) {
+      options.respond(false, undefined, uploadError);
+      return;
+    }
   }
   if (!entry?.sessionId && queueMode !== "interrupt" && isAgentMainSessionKey(cfg, canonicalKey)) {
     // Sending to an empty agent main session should create it; steering still requires an active row.

@@ -10,6 +10,7 @@ import type { dispatchChannelMessageAction } from "../../channels/plugins/messag
 import { assertOutboundHandoffCurrent } from "../../infra/outbound/deliver-handoff.js";
 import type { deliverOutboundPayloads } from "../../infra/outbound/deliver.js";
 import { captureEnv, setTestEnvValue } from "../../test-utils/env.js";
+import { handleGatewayRequest } from "../server-methods.js";
 import {
   agentRuntimeClientForTests as agentRuntimeClient,
   directCliClientForTests as directCliClient,
@@ -20,7 +21,7 @@ import {
   type createMessageMethodTestDriver,
   makeContext,
 } from "./send.test-support.js";
-import type { GatewayRequestContext } from "./types.js";
+import type { GatewayRequestContext, RespondFn } from "./types.js";
 
 type UploadPolicyTestHarness = Pick<
   ReturnType<typeof createMessageMethodTestDriver>,
@@ -61,7 +62,14 @@ export function registerSendUploadPolicyTests({
         id: "slack",
         registrySuffix: "client-upload-policy",
       });
-      const invoke = (options: { trusted?: boolean; mediaUrl?: string } = {}) => {
+      const invoke = async (
+        options: {
+          trusted?: boolean;
+          mediaUrl?: string;
+          viaRouter?: boolean;
+          idempotencyKey?: string;
+        } = {},
+      ) => {
         const sessionKey = "agent:main:slack:channel:C1";
         const client = options.trusted
           ? agentRuntimeClient(sessionKey)
@@ -77,8 +85,31 @@ export function registerSendUploadPolicyTests({
           channel: "slack",
           agentId: "main",
           ...(options.trusted ? { sessionKey } : {}),
-          idempotencyKey: "client-upload-policy",
+          idempotencyKey: options.idempotencyKey ?? "client-upload-policy",
         };
+        if (options.viaRouter) {
+          const params =
+            method === "send"
+              ? { ...common, to: "channel:C1", ...content }
+              : { ...common, action: "send", params: { to: "channel:C1", ...content } };
+          const respond = vi.fn<RespondFn>();
+          await handleGatewayRequest({
+            req: { type: "req", id: "same-wire-id", method, params },
+            respond,
+            context,
+            client: {
+              connect: {
+                minProtocol: 1,
+                maxProtocol: 1,
+                role: "operator",
+                scopes: ["operator.admin"],
+                client: { id: "cli", mode: "cli", platform: "test", version: "test" },
+              },
+            },
+            isWebchatConnect: () => false,
+          });
+          return { respond };
+        }
         return method === "send"
           ? runSendWithClient({ ...common, to: "channel:C1", ...content }, client, context)
           : runMessageActionRequest(
@@ -89,7 +120,11 @@ export function registerSendUploadPolicyTests({
       };
       return {
         plugin,
+        context,
         invoke,
+        enable: () => {
+          enabled = true;
+        },
         outboundDir: path.join(stateDir, "media", "outbound"),
         disable: () => {
           enabled = false;
@@ -97,6 +132,108 @@ export function registerSendUploadPolicyTests({
         restore: () => env.restore(),
       };
     }
+
+    it.each([false, true])(
+      "replays accepted uploads through the router after disable (inflight: %s)",
+      async (inflight) => {
+        const fixture = uploadFixture();
+        let defaultAccountId = "primary";
+        fixture.plugin.config.listAccountIds = () => ["primary", "secondary"];
+        fixture.plugin.config.defaultAccountId = () => defaultAccountId;
+        fixture.plugin.config.resolveAccount = (_cfg, accountId) => ({ accountId, enabled: true });
+        const entered = createDeferred();
+        const release = createDeferred();
+        const acceptedSend = vi.fn();
+        const accepted = async (params: { assertDirectAdapterHandoff?: () => void }) => {
+          assertOutboundHandoffCurrent(params.assertDirectAdapterHandoff);
+          acceptedSend();
+          entered.resolve();
+          await release.promise;
+        };
+        if (method === "send") {
+          mocks.deliverOutboundPayloads.mockImplementation(async (params) => {
+            await accepted(params);
+            return [{ channel: "slack", messageId: "accepted-upload" }];
+          });
+        } else {
+          const actual = await vi.importActual<
+            typeof import("../../channels/plugins/message-action-dispatch.js")
+          >("../../channels/plugins/message-action-dispatch.js");
+          mocks.dispatchChannelMessageAction.mockImplementation(
+            actual.dispatchChannelMessageAction,
+          );
+          expectDefined(fixture.plugin.actions, "upload action adapter").handleAction = async (
+            ctx,
+          ) => {
+            await accepted(ctx);
+            return jsonResult({ ok: true, messageId: "accepted-upload" });
+          };
+        }
+        const first = fixture.invoke({ viaRouter: true });
+        let restoreReplay: (() => void) | undefined;
+        try {
+          await Promise.race([entered.promise, first]);
+          expect(acceptedSend).toHaveBeenCalledTimes(1);
+          if (!inflight) {
+            release.resolve();
+            expect(firstRespondCall((await first).respond)[0]).toBe(true);
+          }
+          const files = await fs.readdir(fixture.outboundDir);
+          const replayReached = createDeferred();
+          const readDedupe = fixture.context.dedupe.get.bind(fixture.context.dedupe);
+          const observeReplay = vi
+            .spyOn(fixture.context.dedupe, "get")
+            .mockImplementation((key) => {
+              const result = readDedupe(key);
+              if (key.endsWith(":client-upload-policy")) {
+                replayReached.resolve();
+              }
+              return result;
+            });
+          restoreReplay = () => observeReplay.mockRestore();
+          fixture.disable();
+          const retry = fixture.invoke({ viaRouter: true });
+          await Promise.race([
+            replayReached.promise,
+            retry.then(({ respond }) => {
+              expect(firstRespondCall(respond)[0]).toBe(true);
+              expect(firstRespondCall(respond)[3]).toMatchObject({ cached: true });
+            }),
+          ]);
+          release.resolve();
+          const [{ respond: initial }, { respond: replay }] = await Promise.all([first, retry]);
+          expect(firstRespondCall(replay).slice(0, 3)).toEqual(
+            firstRespondCall(initial).slice(0, 3),
+          );
+          expect(firstRespondCall(replay)[3]).toMatchObject({ cached: true });
+          restoreReplay();
+          restoreReplay = undefined;
+          const fresh = { viaRouter: true, idempotencyKey: "fresh-upload-key" };
+          const denied = await fixture.invoke(fresh);
+          expect(firstRespondCall(denied.respond)[2]).toMatchObject({
+            code: ErrorCodes.FORBIDDEN,
+            details: { code: "UPLOADS_DISABLED" },
+          });
+          expect(
+            [...fixture.context.dedupe.keys()].some((key) => key.endsWith(":fresh-upload-key")),
+          ).toBe(false);
+          expect(await fs.readdir(fixture.outboundDir)).toEqual(files);
+          expect(acceptedSend).toHaveBeenCalledTimes(1);
+          defaultAccountId = "secondary";
+          fixture.enable();
+          expect(firstRespondCall((await fixture.invoke(fresh)).respond)[0]).toBe(true);
+          expect(
+            [...fixture.context.dedupe.keys()].filter((key) => key.endsWith(":fresh-upload-key")),
+          ).toEqual([expect.stringContaining('["slack","secondary"]')]);
+          expect(acceptedSend).toHaveBeenCalledTimes(2);
+        } finally {
+          restoreReplay?.();
+          release.resolve();
+          await first;
+          fixture.restore();
+        }
+      },
+    );
 
     it.each([
       { disable: false, trusted: false },

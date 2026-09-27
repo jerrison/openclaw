@@ -1,4 +1,5 @@
 // Real RPC owners and media filesystem; only inference uses the shared Gateway fixture.
+import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -27,6 +28,101 @@ const handlers: Record<string, GatewayRequestHandler> = {
 
 describe("client upload policy at the input commit owner", () => {
   const fixture = installAgentAuthorityProofFixture();
+
+  it.each([
+    "chat.send",
+    "sessions.send",
+    "sessions.steer",
+    "sessions.create",
+    "direct-chat",
+  ] as const)(
+    "replays accepted %s uploads after disable without admitting fresh bytes",
+    async (route) => {
+      const f = await fixture({ imageCapable: true });
+      const originalConfig = f.context.getCommittedRuntimeConfig;
+      const initialConfig = f.context.getRuntimeConfig();
+      let enabled = true;
+      f.context.getCommittedRuntimeConfig = () => ({
+        ...initialConfig,
+        gateway: { ...initialConfig.gateway, uploads: { enabled } },
+      });
+      const method = route === "direct-chat" ? "chat.send" : route;
+      const params = {
+        agentId: "main",
+        ...(method === "chat.send"
+          ? { sessionKey: f.sessionKey }
+          : { key: method === "sessions.create" ? f.sessionKey + "-created" : f.sessionKey }),
+        message: "Accepted upload receipt",
+        idempotencyKey: f.runId,
+        attachments: [{ mimeType: "image/png", fileName: "proof.png", content: PNG }],
+      };
+      const invoke = async (requestParams = params) => {
+        const respond = vi.fn<RespondFn>();
+        const options = {
+          req: { type: "req" as const, id: "receipt-wire-id", method, params: requestParams },
+          params: requestParams,
+          client: {
+            connId: "upload-receipt-proof",
+            connect: {
+              minProtocol: 1,
+              maxProtocol: 1,
+              role: "operator" as const,
+              scopes: ["operator.admin"],
+              client: { id: "cli", mode: "cli", platform: "test", version: "test" },
+              device: {
+                id: "upload-receipt-device",
+                publicKey: "synthetic",
+                signature: "synthetic",
+                signedAt: 1,
+                nonce: "synthetic",
+              },
+            },
+          },
+          context: f.context,
+          respond,
+          isWebchatConnect: () => false,
+        } satisfies Parameters<GatewayRequestHandler>[0];
+        if (route === "direct-chat") {
+          await handleDirectExternalChatSend(options);
+        } else {
+          await handleGatewayRequest(options);
+        }
+        return respond;
+      };
+      try {
+        const accepted = await invoke();
+        expect(accepted.mock.calls.at(-1)?.[0]).toBe(true);
+        await f.drain();
+        const baseline = await invoke();
+        const receipt = baseline.mock.calls.at(-1)!;
+        expect(receipt[0]).toBe(true);
+        expect(receipt[3]).toMatchObject({ cached: true });
+        const mediaDir = path.join(getMediaDir(), "inbound");
+        const files = await fs.readdir(mediaDir);
+        const dispatches = dispatchInboundMessageMock.mock.calls.length;
+        enabled = false;
+        const replay = await invoke();
+        expect(replay).toHaveBeenCalledExactlyOnceWith(
+          receipt[0],
+          receipt[1],
+          receipt[2],
+          expect.objectContaining({ cached: true }),
+        );
+        const freshRunId = randomUUID();
+        const denied = await invoke({ ...params, idempotencyKey: freshRunId });
+        expect(denied.mock.calls.at(-1)?.[2]).toMatchObject({
+          code: "FORBIDDEN",
+          details: { code: "UPLOADS_DISABLED" },
+        });
+        expect(f.context.dedupe.has("chat:" + freshRunId)).toBe(false);
+        expect(await fs.readdir(mediaDir)).toEqual(files);
+        expect(dispatchInboundMessageMock).toHaveBeenCalledTimes(dispatches);
+      } finally {
+        f.context.getCommittedRuntimeConfig = originalConfig;
+        await f.cleanup();
+      }
+    },
+  );
 
   it.each([
     ["chat.send", "inline-image", "policy"],

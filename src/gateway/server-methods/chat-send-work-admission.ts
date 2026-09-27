@@ -11,11 +11,37 @@ import type { registerChatAbortController } from "../chat-abort.js";
 import { authorizeGatewaySessionCreation, resolveCreatorSandbox } from "../operator-role-policy.js";
 import { SessionMutationAuthorizationChangedError } from "../session-mutation-authorization-error.js";
 import { loadSessionEntry } from "../session-utils.js";
+import { captureGatewayClientUploadCommitGuard } from "../upload-policy.js";
 import { formatForLog } from "../ws-log.js";
 import type { NormalizedChatSendRequest } from "./chat-send-request.js";
 import type { PreparedChatSendSession } from "./chat-send-session.js";
 import { resolveOperatorSessionCreation } from "./session-creation-provenance.js";
 import type { GatewayRequestContext, GatewayRequestHandlerOptions } from "./types.js";
+
+/** New input is checked only after the chat owner has reconciled prior receipts. */
+export function admitChatSendUploads({
+  params,
+  client,
+  context,
+  respond,
+}: Pick<GatewayRequestHandlerOptions, "params" | "client" | "context" | "respond">) {
+  const assertClientUploadAllowed = captureGatewayClientUploadCommitGuard({
+    method: "chat.send",
+    requestParams: params,
+    client,
+    context,
+  });
+  try {
+    assertClientUploadAllowed?.();
+  } catch (error) {
+    if (!(error instanceof SessionMutationAuthorizationChangedError)) {
+      throw error;
+    }
+    respond(false, undefined, error.error);
+    return { ok: false as const };
+  }
+  return { ok: true as const, assertClientUploadAllowed };
+}
 
 /** Caller and physical target custody end together when admitted work settles. */
 export function releaseChatSendCallerAuthority(params: {

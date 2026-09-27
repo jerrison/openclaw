@@ -255,7 +255,9 @@ decoding them. Text-only requests still work. A disabled upload is rejected as
 a whole; its attachments are not silently removed. Already accepted writes finish
 settling: for example, an avatar persisted before the switch changes still gets
 its matching agent configuration update. Disabling uploads does not undo existing
-bytes or turn that completed upload into a denial.
+bytes or turn that completed upload into a denial. Authorized retries of accepted
+chat, session-creation, and outbound-message requests replay their existing receipts
+without uploading again; a fresh idempotency key still requires uploads to be enabled.
 
 Downloads, existing media, agent-generated images/files, ordinary text editing,
 server-local memory migration, channel-inbound media, and internal worker file
