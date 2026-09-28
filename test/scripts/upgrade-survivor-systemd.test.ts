@@ -253,6 +253,7 @@ describe.skipIf(process.platform === "win32")("survivor manager fixture", () => 
     );
     expect(await readSystemdServiceRuntime(env)).toMatchObject({ status: "unknown" });
     rmSync(unit);
+    expect(systemctl("daemon-reload").status).toBe(0);
     expect(await readSystemdServiceExecStart(env, { requireEffective: true })).toBeNull();
     expect(await readSystemdServiceRuntime(env)).toMatchObject({
       status: "stopped",
