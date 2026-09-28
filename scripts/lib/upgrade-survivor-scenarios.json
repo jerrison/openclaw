@@ -1,6 +1,7 @@
 {
   "scenarios": [
     "base",
+    "cron-delivery-attempt",
     "abandoned-update",
     "legacy-operator-state",
     "workshop-doctor-recovery",

@@ -27,6 +27,7 @@ const scenarioMinimumBaselines = new Map([
 // These black-box scenarios are implemented entirely by the current trusted
 // release harness and treat the selected tree only as the package under test.
 const TRUSTED_HARNESS_OWNED_SCENARIOS = new Set([
+  "cron-delivery-attempt",
   "mobile-pairing-reconnect",
   "abandoned-update",
   "projects-doctor",
@@ -47,6 +48,7 @@ export function isTrustedHarnessOwnedUpgradeSurvivorScenario(scenario) {
 // qualification until their runtime cost justifies aggregate release coverage.
 const aggregateScenarios = UPGRADE_SURVIVOR_SCENARIOS.filter(
   (scenario) =>
+    scenario !== "cron-delivery-attempt" &&
     scenario !== "abandoned-update" &&
     scenario !== "missing-configured-plugin-migration" &&
     scenario !== "missing-load-path" &&
@@ -186,6 +188,7 @@ export function supportsUpgradeSurvivorScenarioAtBaseline(scenario, baselineSpec
     return baselineSpec === "openclaw@2026.9.6";
   }
   if (
+    scenario === "cron-delivery-attempt" ||
     scenario === "projects-doctor" ||
     scenario === "channel-owner-policy" ||
     scenario === "projects-startup-migration"

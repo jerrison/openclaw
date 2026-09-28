@@ -47,7 +47,7 @@ if [ "$SCENARIO" = "mobile-pairing-reconnect" ]; then
     node -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("hex"))'
   )"
 fi
-if [ "$SCENARIO" = "watchos-direct-node" ] || [ "$SCENARIO" = "mobile-pairing-reconnect" ] || [ "$SCENARIO" = "dreaming-cron-doctor" ] || [ "$WORKER_CELL" = "1" ]; then
+if [ "$SCENARIO" = "cron-delivery-attempt" ] || [ "$SCENARIO" = "watchos-direct-node" ] || [ "$SCENARIO" = "mobile-pairing-reconnect" ] || [ "$SCENARIO" = "dreaming-cron-doctor" ] || [ "$WORKER_CELL" = "1" ]; then
   unset OPENAI_API_KEY ANTHROPIC_API_KEY GEMINI_API_KEY DISCORD_BOT_TOKEN TELEGRAM_BOT_TOKEN
 else
   export OPENAI_API_KEY="sk-openclaw-upgrade-survivor"
@@ -2183,6 +2183,36 @@ phase validate-worker-cell validate_worker_cell
 phase reset-run-state reset_run_state
 phase install-baseline install_baseline
 phase initialize-state initialize_state
+if [ "$SCENARIO" = "cron-delivery-attempt" ]; then
+  if [ "$baseline_spec" != "openclaw@2026.9.4" ] || [ "$CANDIDATE_KIND" != "tarball" ] ||
+    [ "$UPDATE_RESTART_MODE" != "manual" ] || [ "$ROOT_MANAGED_VPS" != "0" ] || [ "$LIVE_ENABLED" != "0" ]; then
+    echo "$SCENARIO requires published openclaw@2026.9.4, a frozen candidate tarball, isolated manual restart, and no live provider" >&2
+    exit 2
+  fi
+  export OPENCLAW_SKIP_CRON=0
+  export OPENCLAW_SKIP_STARTUP_MODEL_PREWARM=1
+  phase receipt-baseline-identity node scripts/e2e/lib/upgrade-survivor/worker-cell-package.mjs baseline "$(package_root)"
+  phase receipt-candidate-version resolve_candidate_version
+  phase receipt-candidate-identity prepare_worker_cell_package
+  phase receipt-seed-schema19 node scripts/e2e/lib/upgrade-survivor/cron-delivery-attempt.mjs seed
+  phase receipt-original-driver-update update_candidate
+  phase receipt-installed-identity assert_worker_cell_update
+  phase receipt-inspect-schema20 node scripts/e2e/lib/upgrade-survivor/cron-delivery-attempt.mjs upgraded
+  phase receipt-standalone-doctor run_doctor
+  phase receipt-inspect-after-doctor node scripts/e2e/lib/upgrade-survivor/cron-delivery-attempt.mjs doctor
+  for startup in first second; do
+    GATEWAY_LOG="$ARTIFACT_ROOT/receipt-$startup-gateway.log"
+    HEALTHZ_JSON="$ARTIFACT_ROOT/receipt-$startup-healthz.json"
+    READYZ_JSON="$ARTIFACT_ROOT/receipt-$startup-readyz.json"
+    phase "receipt-$startup-gateway-start" start_gateway
+    phase "receipt-$startup-gateway-probes" check_gateway_probes
+    phase "receipt-$startup-recovery" node scripts/e2e/lib/upgrade-survivor/cron-delivery-attempt.mjs "$startup"
+    phase "receipt-$startup-gateway-stop" stop_gateway
+  done
+  run_completed="1"
+  echo "Cron delivery receipt survived the published updater, schema 19 to 20 migration, Doctor, and two candidate Gateway starts; legacy ambiguous one-shots remain disabled as Unknown."
+  exit 0
+fi
 if [ "$SCENARIO" = "dreaming-cron-doctor" ]; then
   if [ "$baseline_spec" != "openclaw@2026.9.6" ] || [ "$CANDIDATE_KIND" != "tarball" ] ||
     [ "$UPDATE_RESTART_MODE" != "manual" ] || [ "$ROOT_MANAGED_VPS" != "0" ] || [ "$LIVE_ENABLED" != "0" ]; then

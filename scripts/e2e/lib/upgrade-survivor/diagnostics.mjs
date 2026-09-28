@@ -116,6 +116,9 @@ const logNames = [
   "legacy-operator-post-update-cron-history.json",
   "legacy-operator-candidate-cron-history.json",
   "dreaming-cron-proof.json",
+  "cron-delivery-attempt-proof.json",
+  "receipt-first-gateway.log",
+  "receipt-second-gateway.log",
   "legacy-operator-baseline-turn.out",
   "legacy-operator-baseline-turn.err",
   "legacy-operator-candidate-turn.out",
@@ -1815,6 +1818,9 @@ function publishedSuccessSummary(artifactRoot, sanitize) {
             ]
           : []),
         ...(snapshot.scenario === "dreaming-cron-doctor" ? ["dreaming-cron-proof.json"] : []),
+        ...(snapshot.scenario === "cron-delivery-attempt"
+          ? ["cron-delivery-attempt-proof.json", "doctor.log"]
+          : []),
         ...(snapshot.scenario === "legacy-operator-state" &&
         snapshot.updateRestartMode === "manual" &&
         ["2026.9.3", "2026.9.4"].includes(snapshot.baseline.version)
