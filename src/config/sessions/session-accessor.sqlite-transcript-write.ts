@@ -1,6 +1,4 @@
-import type { DatabaseSync } from "node:sqlite";
-import { err, ok, type Result } from "@openclaw/normalization-core/result";
-import { hasSqlitePostCommitScope } from "../../infra/sqlite-post-commit.js";
+import { ok, type Result } from "@openclaw/normalization-core/result";
 import {
   openOpenClawAgentDatabase,
   resolveOpenClawAgentSqlitePath,
@@ -64,8 +62,13 @@ import {
 import {
   assertNonMessageTranscriptEvent,
   assertLockedTranscriptWriteAllowed,
-  resolveTranscriptAppendRefusal,
 } from "./session-accessor.sqlite-transcript-write-guard.js";
+import {
+  runTranscriptWriteSnapshotSync,
+  SqliteTranscriptMutationConflictError,
+  type TranscriptWriteSnapshot,
+  type TranscriptWriteViewGuard,
+} from "./session-accessor.sqlite-transcript-write-snapshot.js";
 import type {
   SessionTranscriptRuntimeTarget,
   SessionTranscriptWriteLockAccessorContext,
@@ -79,24 +82,7 @@ import {
   withOwnedSessionTranscriptWriterFence,
 } from "./transcript-write-context.js";
 
-class SqliteTranscriptMutationConflictError extends Error {
-  constructor(sessionId: string) {
-    super(`SQLite transcript changed while preparing rewrite for ${sessionId}`);
-    this.name = "SqliteTranscriptMutationConflictError";
-  }
-}
-
-export type TranscriptWriteSnapshot<T> = {
-  result: T;
-  lifecycleRevision?: string;
-  before: SessionTranscriptContextVersion;
-  after: SessionTranscriptContextVersion;
-};
-
-type TranscriptWriteViewGuard = {
-  assertCurrent: () => void;
-  onPendingTransaction: (database: DatabaseSync) => void;
-};
+export type { TranscriptWriteSnapshot } from "./session-accessor.sqlite-transcript-write-snapshot.js";
 
 export type TranscriptMessageWriteSnapshot<TMessage> = TranscriptWriteSnapshot<
   TranscriptMessageAppendResult<TMessage> | undefined
@@ -436,60 +422,6 @@ export function appendTranscriptEventSnapshotSync(
     options.expectedMutationAt,
     view,
   );
-}
-
-function runTranscriptWriteSnapshotSync<T>(
-  scope: SessionTranscriptWriteScope,
-  operation: (
-    database: OpenClawAgentDatabase,
-    resolved: ReturnType<typeof resolveSqliteTranscriptScope>,
-  ) => T,
-  beforeCommitInTransaction?: () => void,
-  expectedMutationAt?: number | null,
-  view?: TranscriptWriteViewGuard,
-): Result<TranscriptWriteSnapshot<T>, TranscriptAppendRefusal> {
-  const fencedScope = withOwnedSessionTranscriptWriterFence(scope);
-  const resolved = resolveSqliteTranscriptScope(fencedScope);
-  let connection: DatabaseSync | undefined;
-  const result = runOpenClawAgentWriteTransaction<
-    Result<TranscriptWriteSnapshot<T>, TranscriptAppendRefusal>
-  >(
-    (database) => {
-      connection = database.db;
-      beforeCommitInTransaction?.();
-      view?.assertCurrent();
-      assertOwnedTranscriptWriteCommit(fencedScope);
-      const fresh = readSessionEntryRow(database, resolved.sessionKey, "list");
-      const refusal = resolveTranscriptAppendRefusal(fresh?.entry, resolved, fencedScope);
-      if (refusal) {
-        return err(refusal);
-      }
-      const before = readTranscriptContextVersionInTransaction(database, resolved.sessionId);
-      if (expectedMutationAt !== undefined && before.updatedAt !== expectedMutationAt) {
-        throw new SqliteTranscriptMutationConflictError(resolved.sessionId);
-      }
-      const lifecycleRevision = fresh?.entry.lifecycleRevision;
-      const value = operation(database, resolved);
-      view?.assertCurrent();
-      assertOwnedTranscriptWriteCommit(fencedScope);
-      return ok({
-        result: value,
-        lifecycleRevision,
-        before,
-        after: readTranscriptContextVersionInTransaction(database, resolved.sessionId),
-      });
-    },
-    toDatabaseOptions(resolved),
-    { operationLabel: "session.transcript.write-snapshot" },
-  );
-  // A savepoint can return while its enclosing transaction still owns rollback.
-  if (result.ok && connection && hasSqlitePostCommitScope(connection)) {
-    view?.onPendingTransaction(connection);
-  }
-  if (fencedScope.expectedWriterRunId !== undefined && !result.ok) {
-    throw new SessionTranscriptWriterClaimReboundError(result.error);
-  }
-  return result;
 }
 
 /** Appends one transcript message to the additive SQLite transcript store. */
