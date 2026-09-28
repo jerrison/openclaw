@@ -83,7 +83,12 @@ an entry such as a symlink that the browser should not treat as a regular file.
 Listing metadata never grants permission to read an entry. File reads continue
 to enforce the provider's path policy, byte limits, and active workspace binding.
 
-Upgrade paired nodes with the Gateway to get no-follow file types in directory
-listings. Older nodes still support regular-file previews and directory listings
-without symlinks. A symlink can make an older node reject the listing during the
-stat fallback; that error is surfaced rather than shown as an empty directory.
+Paired nodes that supply file types avoid per-entry stat requests. With older
+nodes, the browser skips entries whose stat explicitly rejects a symlink or
+unsupported file type. Permission, transport, and workspace-lifetime errors still
+fail the request. A structured `FILE_TOO_LARGE` refusal during a read is reported
+as the preview limit, including when the file grew after stat.
+
+Session file requests retain their existing live read authorization before each
+workspace operation and before returning a response. Revocation stops subsequent
+workspace operations; it cannot retract an operation already dispatched.

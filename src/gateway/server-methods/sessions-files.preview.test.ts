@@ -76,6 +76,7 @@ describe("sessions.files preview formats", () => {
     fs.writeFileSync(path.join(remote, "large.txt"), "x".repeat(256 * 1024 + 1));
     const owner = await openSafeRoot(remote, { symlinks: "reject" });
     let includeFileTypes = true;
+    let denyLegacyChild = false;
     const ownerPath = (filePath: string) => path.relative(workspaceRoot, filePath);
     const readFile = vi.fn(
       async ({ filePath, maxBytes }: { filePath: string; maxBytes?: number }) =>
@@ -88,11 +89,17 @@ describe("sessions.files preview formats", () => {
           throw new Error("Unexpected non-CAS write");
         },
         stat: async ({ filePath }) => {
+          if (denyLegacyChild && ownerPath(filePath) === "result.json") {
+            throw Object.assign(new Error("node denied file stat"), { code: "PERMISSION_DENIED" });
+          }
           const stat = fs.lstatSync(path.join(remote, ownerPath(filePath)), {
             throwIfNoEntry: false,
           });
           if (!stat) {
             return null;
+          }
+          if (stat.isSymbolicLink()) {
+            throw Object.assign(new Error("node rejected symlink"), { code: "SYMLINK_REDIRECT" });
           }
           return {
             type: stat.isFile() ? "file" : stat.isDirectory() ? "directory" : "other",
@@ -133,7 +140,7 @@ describe("sessions.files preview formats", () => {
     ]);
     expect(listed.gitCheckout).toBeUndefined();
     includeFileTypes = false;
-    // Without listing types, the provider stat still distinguishes symlinks.
+    // Older nodes reject symlink stats instead of returning a file type.
     const legacyListing = expectOkPayload(
       await invokeSessionFilesHandler("sessions.files.list", {
         sessionKey: "agent:main:main",
@@ -143,6 +150,13 @@ describe("sessions.files preview formats", () => {
       "large.txt",
       "result.json",
     ]);
+    denyLegacyChild = true;
+    await expect(
+      invokeSessionFilesHandler("sessions.files.list", {
+        sessionKey: "agent:main:main",
+      }),
+    ).rejects.toMatchObject({ code: "PERMISSION_DENIED" });
+    denyLegacyChild = false;
     expect(resolveLocalSessionWorkspaceRoot({ sessionKey: "agent:main:main" })).toBeUndefined();
     const reveal = expectOkPayload(
       await invokeSessionFilesHandler("sessions.files.reveal", {
@@ -163,6 +177,25 @@ describe("sessions.files preview formats", () => {
     expect(fs.readFileSync(path.join(workspaceRoot, "result.json"), "utf8")).toBe("Gateway decoy");
     releaseRemote();
     await expect(get("result.json")).rejects.toThrow("stopped or not ready");
+  });
+
+  it("reports the preview limit when a remote file grows between stat and fetch", async () => {
+    releaseRemote = registerAgentWorkspaceAccess(workspaceRoot, {
+      bridge: {
+        stat: async () => ({ type: "file", size: 14, mtimeMs: 1 }),
+        readFile: async () => {
+          throw Object.assign(new Error("node refused oversized file"), { code: "FILE_TOO_LARGE" });
+        },
+        writeFile: async () => {
+          throw new Error("unexpected write");
+        },
+      },
+    });
+    const result = await invokeSessionFilesHandler("sessions.files.get", {
+      sessionKey: "agent:main:main",
+      path: "growing.txt",
+    });
+    expect(expectError(result).details.type).toBe("session_file_too_large");
   });
 
   it.each(IMAGE_PREVIEW_FIXTURES)(

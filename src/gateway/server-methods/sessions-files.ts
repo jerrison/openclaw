@@ -452,7 +452,11 @@ async function handleSessionFilesRead(
           ? await listRepositoryArtifacts(loaded.repository, query)
           : loaded.repository
             ? await loaded.repository.inspect("list", query)
-            : await listSessionWorkspaceFiles({ ...loaded, ...query });
+            : await listSessionWorkspaceFiles({
+                ...loaded,
+                ...query,
+                assertCurrent: () => read?.assertCurrent(),
+              });
       read?.assertCurrent();
     } else {
       const query = { files: loaded.files, path: request.params.path };
@@ -461,7 +465,11 @@ async function handleSessionFilesRead(
           ? await getRepositoryArtifact(loaded.repository, request.params.path)
           : loaded.repository
             ? await loaded.repository.inspect("get", query)
-            : await getSessionWorkspaceFile({ ...loaded, ...query });
+            : await getSessionWorkspaceFile({
+                ...loaded,
+                ...query,
+                assertCurrent: () => read?.assertCurrent(),
+              });
       read?.assertCurrent();
       const { file } = fileResult;
       if (!file || file.missing) {

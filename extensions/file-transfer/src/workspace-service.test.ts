@@ -611,6 +611,21 @@ describe("registered node workspace service", () => {
     expect(openDuplex).not.toHaveBeenCalled();
   });
 
+  it("preserves structured node refusals for file growth and symlinks", async () => {
+    await service.start(context());
+    const bridge = getAgentWorkspaceAccess(local)!.bridge;
+    const filePath = path.join(local, "AGENTS.md");
+    expect(await bridge.stat({ filePath })).toMatchObject({ type: "file", size: 20 });
+    await fs.writeFile(path.join(remote, "AGENTS.md"), "x".repeat(33));
+    await expect(bridge.readFile({ filePath, maxBytes: 32 })).rejects.toMatchObject({
+      code: "FILE_TOO_LARGE",
+    });
+    await fs.symlink("AGENTS.md", path.join(remote, "link.md"));
+    await expect(bridge.stat({ filePath: path.join(local, "link.md") })).rejects.toMatchObject({
+      code: "SYMLINK_REDIRECT",
+    });
+  });
+
   it("fails large reads explicitly when duplex is unavailable", async () => {
     await fs.writeFile(path.join(remote, "output.bin"), "");
     await fs.truncate(path.join(remote, "output.bin"), 17 * 1024 * 1024);

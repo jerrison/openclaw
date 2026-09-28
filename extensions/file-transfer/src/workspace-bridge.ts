@@ -19,7 +19,9 @@ import { fetchWorkspaceFile } from "./workspace-file-fetch.js";
 const MAX_BYTES = 16 * 1024 * 1024;
 const DIRECTORY_PAGE_SIZE = 4096;
 
-class FileFetchTooLargeError extends Error {}
+class FileFetchTooLargeError extends Error {
+  readonly code = "FILE_TOO_LARGE";
+}
 
 function relativeWithin(root: string, target: string, paths = path): string {
   const relative = paths.relative(root, target);

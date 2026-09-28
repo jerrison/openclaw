@@ -4,6 +4,7 @@
 import { createHash } from "node:crypto";
 import path from "node:path";
 import { createAsyncLock, readFileWindowFully } from "@openclaw/fs-safe/advanced";
+import { extractErrorCode } from "@openclaw/normalization-core/error-coercion";
 import {
   getAgentWorkspaceAccess,
   type AgentWorkspaceAccess,
@@ -64,11 +65,13 @@ function remoteFilePath(root: WorkspaceRoot, browserPath: string): string {
 export async function statWorkspacePath(
   rootDir: string | WorkspaceRoot,
   browserPath: string,
+  assertCurrent?: () => void,
 ): Promise<WorkspacePathStat | undefined> {
   const workspaceRoot = typeof rootDir === "string" ? await openWorkspaceRoot(rootDir) : rootDir;
   if (!workspaceRoot) {
     return undefined;
   }
+  assertCurrent?.();
   if ("access" in workspaceRoot) {
     const stat = await workspaceRoot.access.bridge.stat({
       filePath: remoteFilePath(workspaceRoot, browserPath),
@@ -92,11 +95,13 @@ export async function statWorkspacePath(
 export async function listWorkspacePath(
   rootDir: string | WorkspaceRoot,
   browserPath: string,
+  assertCurrent?: () => void,
 ): Promise<WorkspaceDirEntry[] | undefined> {
   const workspaceRoot = typeof rootDir === "string" ? await openWorkspaceRoot(rootDir) : rootDir;
   if (!workspaceRoot) {
     return undefined;
   }
+  assertCurrent?.();
   if ("access" in workspaceRoot) {
     const list = workspaceRoot.access.bridge.readDirectory;
     if (!list) {
@@ -107,16 +112,30 @@ export async function listWorkspacePath(
     const result: WorkspaceDirEntry[] = [];
     for (const entry of entries) {
       // Use listing metadata when supplied. Re-statting every child adds a
-      // network round trip per entry and rejects an entire directory on symlinks.
-      const stat =
-        entry.isFile !== undefined && entry.size !== undefined && entry.mtimeMs !== undefined
-          ? {
-              isFile: entry.isFile,
-              isDirectory: entry.isDirectory,
-              size: entry.size,
-              mtimeMs: entry.mtimeMs,
-            }
-          : await statWorkspacePath(workspaceRoot, path.join(browserPath, entry.name));
+      // network round trip per entry; old nodes also reject symlink stats.
+      let stat: WorkspacePathStat | undefined;
+      if (entry.isFile !== undefined && entry.size !== undefined && entry.mtimeMs !== undefined) {
+        stat = {
+          isFile: entry.isFile,
+          isDirectory: entry.isDirectory,
+          size: entry.size,
+          mtimeMs: entry.mtimeMs,
+        };
+      } else {
+        try {
+          stat = await statWorkspacePath(
+            workspaceRoot,
+            path.join(browserPath, entry.name),
+            assertCurrent,
+          );
+        } catch (error) {
+          const code = extractErrorCode(error);
+          if (code === "SYMLINK_REDIRECT" || code === "UNSUPPORTED_FILE_TYPE") {
+            continue;
+          }
+          throw error;
+        }
+      }
       if (stat) {
         result.push({ ...stat, name: entry.name });
       }
@@ -140,12 +159,13 @@ export async function listWorkspacePath(
 export async function readWorkspaceFile(
   rootDir: string,
   browserPath: string,
-  opts?: { maxBytes?: number },
+  opts?: { maxBytes?: number; assertCurrent?: () => void },
 ): Promise<WorkspaceFileReadResult | undefined | "too-large"> {
   const workspaceRoot = await openWorkspaceRoot(rootDir);
   if (!workspaceRoot) {
     return undefined;
   }
+  opts?.assertCurrent?.();
   if ("access" in workspaceRoot) {
     const filePath = remoteFilePath(workspaceRoot, browserPath);
     const stat = await workspaceRoot.access.bridge.stat({ filePath });
@@ -156,7 +176,16 @@ export async function readWorkspaceFile(
     if (stat.size > maxBytes) {
       return "too-large";
     }
-    const buffer = await workspaceRoot.access.bridge.readFile({ filePath, maxBytes });
+    opts?.assertCurrent?.();
+    let buffer: Buffer;
+    try {
+      buffer = await workspaceRoot.access.bridge.readFile({ filePath, maxBytes });
+    } catch (error) {
+      if (extractErrorCode(error) === "FILE_TOO_LARGE") {
+        return "too-large";
+      }
+      throw error;
+    }
     if (buffer.length > maxBytes) {
       return "too-large";
     }
