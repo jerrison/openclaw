@@ -24,9 +24,10 @@ vi.mock("openclaw/plugin-sdk/realtime-bootstrap-context", async (importOriginal)
       if (!host.modernAvailable) {
         return undefined;
       }
-      return host.rejection
+      const rejection = host.rejection;
+      return rejection
         ? async () => {
-            throw host.rejection;
+            throw rejection;
           }
         : actual.resolveRealtimeVoiceAgentContextInstructions;
     },
