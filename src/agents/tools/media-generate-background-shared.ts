@@ -647,6 +647,7 @@ export function createMediaGenerationTaskLifecycle(params: {
 }) {
   return {
     createTaskRun(
+      this: void,
       runParams: CreateMediaGenerationTaskRunParams,
     ): Promise<MediaGenerationTaskHandle | null> {
       return createMediaGenerationTaskRun({
