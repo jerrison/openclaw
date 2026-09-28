@@ -29,6 +29,7 @@ import {
 } from "../session-transcript-readers.js";
 import { loadGatewaySessionEntryReadOnly } from "../session-utils.js";
 import { resolveSessionWorkspaceRoots } from "../session-workspace-roots.js";
+import { WORKSPACE_PREVIEW_MAX_BYTES } from "../workspace-file-limits.js";
 import {
   execOpenPath,
   formatOpenPathError,
@@ -54,7 +55,6 @@ import {
   type LoadedSessionFiles,
   type TouchedFile,
 } from "./workspace-files.js";
-import { WORKSPACE_PREVIEW_MAX_BYTES } from "./workspace-fs.js";
 
 type FileKind = TouchedFile["kind"];
 

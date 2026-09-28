@@ -10,6 +10,7 @@ import {
 } from "../../agents/workspace-access.js";
 import { root as fsSafeRoot, FsSafeError, type ReadResult } from "../../infra/fs-safe.js";
 import { isPathInside } from "../../infra/path-guards.js";
+import { WORKSPACE_PREVIEW_MAX_BYTES } from "../workspace-file-limits.js";
 
 type LocalWorkspaceRoot = Awaited<ReturnType<typeof fsSafeRoot>>;
 export type WorkspaceRoot =
@@ -30,9 +31,6 @@ type WorkspaceFileReadResult = {
   readOnly?: boolean;
 };
 type WorkspaceFilePrefixResult = Pick<ReadResult, "buffer" | "stat"> & { canonicalPath: string };
-
-/** Shared preview cap: keeps file payloads comfortably under client WS limits. */
-export const WORKSPACE_PREVIEW_MAX_BYTES = 256 * 1024;
 
 export const enqueueWorkspaceFileUpdate = createAsyncLock();
 
