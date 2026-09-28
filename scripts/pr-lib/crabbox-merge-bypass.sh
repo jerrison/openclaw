@@ -40,7 +40,7 @@ verify_crabbox_admin_merge_bypass() {
   fi
 
   local repo_nwo
-  repo_nwo=$(pr_gh_plain repo view --json nameWithOwner --jq .nameWithOwner) || return 1
+  repo_nwo=$(pr_gh repo view --json nameWithOwner --jq .nameWithOwner) || return 1
   # Mutable authorization evidence must be revalidated even when PATH uses a cache.
   local api_read=(api -H 'Cache-Control: max-age=0')
   local proof_dir=".local/merge-crabbox-bypass"
@@ -52,7 +52,7 @@ verify_crabbox_admin_merge_bypass() {
   jq -n --arg login "$actor" '{login:$login}' >"$proof_dir/actor.json" || return 1
   pr_gh_plain "${api_read[@]}" "repos/$repo_nwo/pulls/$pr" >"$proof_dir/pull-request.json" || return 1
 
-  if ! pr_gh_plain "${api_read[@]}" --paginate --slurp \
+  if ! pr_gh "${api_read[@]}" --paginate --slurp \
     "repos/$repo_nwo/commits/$head_sha/check-runs?filter=latest&per_page=100" \
     >"$proof_dir/check-run-pages.json"; then
     echo "Crabbox merge bypass failed: unable to read exact-head check runs." >&2
@@ -75,7 +75,7 @@ verify_crabbox_admin_merge_bypass() {
     echo "Crabbox merge bypass failed: trusted gate has no exact Actions run URL." >&2
     return 1
   fi
-  pr_gh_plain "${api_read[@]}" "repos/$repo_nwo/actions/runs/$crabbox_publisher_run_id" \
+  pr_gh "${api_read[@]}" "repos/$repo_nwo/actions/runs/$crabbox_publisher_run_id" \
     >"$proof_dir/publisher-run.json" || return 1
 
   local ci_details_url
@@ -95,9 +95,9 @@ verify_crabbox_admin_merge_bypass() {
     return 1
   fi
 
-  pr_gh_plain "${api_read[@]}" "repos/$repo_nwo/actions/runs/$ci_run_id" \
+  pr_gh "${api_read[@]}" "repos/$repo_nwo/actions/runs/$ci_run_id" \
     >"$proof_dir/workflow-run.json" || return 1
-  if ! pr_gh_plain "${api_read[@]}" --paginate --slurp \
+  if ! pr_gh "${api_read[@]}" --paginate --slurp \
     "repos/$repo_nwo/actions/runs/$ci_run_id/jobs?filter=latest&per_page=100" \
     >"$proof_dir/job-pages.json"; then
     echo "Crabbox merge bypass failed: unable to read normal CI jobs." >&2
@@ -109,17 +109,17 @@ verify_crabbox_admin_merge_bypass() {
   encoded_actor=$(jq -rn --arg value "$actor" '$value | @uri')
   pr_gh_plain "${api_read[@]}" "orgs/openclaw/memberships/$encoded_actor" \
     >"$proof_dir/membership.json" || return 1
-  pr_gh_plain "${api_read[@]}" "repos/$repo_nwo/git/ref/heads/main" >"$proof_dir/main-ref.json" || return 1
+  pr_gh "${api_read[@]}" "repos/$repo_nwo/git/ref/heads/main" >"$proof_dir/main-ref.json" || return 1
   local workflow_sha
   local main_sha
   workflow_sha=$(jq -er '.head_sha | select(type == "string" and test("^[0-9a-f]{40}$"))' \
     "$proof_dir/publisher-run.json") || return 1
   main_sha=$(jq -er '.object.sha | select(type == "string" and test("^[0-9a-f]{40}$"))' \
     "$proof_dir/main-ref.json") || return 1
-  pr_gh_plain "${api_read[@]}" "repos/$repo_nwo/compare/$workflow_sha...$main_sha" \
+  pr_gh "${api_read[@]}" "repos/$repo_nwo/compare/$workflow_sha...$main_sha" \
     >"$proof_dir/main-comparison.json" || return 1
   # Keep this as the final remote authority read before the verifier returns.
-  pr_gh_plain "${api_read[@]}" "repos/$repo_nwo/git/ref/heads/main" \
+  pr_gh "${api_read[@]}" "repos/$repo_nwo/git/ref/heads/main" \
     >"$proof_dir/final-main-ref.json" || return 1
   if ! node "$script_parent_dir/pr-lib/crabbox-merge-bypass.mjs" \
     --actor "$proof_dir/actor.json" \

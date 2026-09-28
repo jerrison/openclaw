@@ -21,7 +21,16 @@ Maintainer GitHub helpers use the external `gh` on the caller's unchanged
 installations, extract default-route tokens, or retry a refusal through another
 binary. `OPENCLAW_GH_BIN` is an explicit operator-owned override for supporting
 callers; choose it only when its authentication and protections are appropriate.
-PATH-based read helpers, including this watcher, ignore that override.
+Read-only helpers, including this watcher, ignore that writer override and use
+`gh` from `PATH`. When Octopool's shim is installed on `PATH` (normally
+`~/.local/share/octopool/bin/gh`), it owns read routing and caching. Without the
+shim, the same helpers use the installed GitHub CLI.
+Set `OPENCLAW_GH_READ_BIN` to an executable path to override only these reads;
+point it at a native `gh` to opt out of Octopool for reads. An unset or empty
+read override keeps PATH routing, and an invalid nonempty override fails without
+trying another binary. Neither override changes writer identity checks or merge
+guards. Helpers normalize colors and parse stdout separately from shim notices
+on stderr.
 Authoritative REST reads request revalidation with `Cache-Control: max-age=0`
 and supply concrete repository paths. The watcher resolves its repository once,
 then revalidates mutable PR state on each read. Writer identity uses authenticated

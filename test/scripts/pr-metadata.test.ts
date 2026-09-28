@@ -456,7 +456,7 @@ describe("PR metadata through REST", () => {
             graphqlResponses: [graphqlResponse(repository)],
             graphqlQuota,
           },
-          "pr_gh_plain repo view --json id,nameWithOwner,url",
+          "pr_gh repo view --json id,nameWithOwner,url",
         );
         expect(result.status, result.stderr).toBe(graphqlQuota ? 75 : 0);
         if (!graphqlQuota) {
@@ -467,6 +467,9 @@ describe("PR metadata through REST", () => {
           });
         }
         expect(result.calls.filter((call) => call.includes("graphql"))).toHaveLength(1);
+        expect(result.calls.find((call) => call.includes("graphql"))).toContain(
+          "Cache-Control: max-age=0",
+        );
         expect(result.calls).toContainEqual(["browse"]);
         expect(
           result.calls.filter((call) => call.includes("repos/base-owner/base-repo")),
@@ -552,9 +555,14 @@ describe("PR metadata through REST", () => {
                     page([{ ...node, databaseId: mode === "duplicate" ? 12 : 13 }], false),
                   ],
           },
-          "pr_gh_plain issue-comments base-owner/base-repo github.com 42",
+          "pr_gh issue-comments base-owner/base-repo github.com 42",
         );
         expect(result.status, result.stderr).toBe(mode === "complete" ? 0 : 65);
+        expect(
+          result.calls
+            .filter((call) => call.includes("graphql"))
+            .every((call) => call.includes("Cache-Control: max-age=0")),
+        ).toBe(true);
         if (mode === "complete") {
           const comments = JSON.parse(result.stdout).flat();
           expect(comments).toHaveLength(2);

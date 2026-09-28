@@ -697,7 +697,11 @@ if (args[0] === "api" && method === "POST" && endpoint.endsWith("/git/refs")) {
       trustedWorkflowRef === "main" ? "refs/heads/main" : `refs/tags/${trustedWorkflowRef}`;
     const githubEnv = { ...process.env };
     for (const key of Object.keys(githubEnv)) {
-      if (/^(?:GH|GITHUB)_.*TOKEN$/u.test(key) || key === "OPENCLAW_GH_BIN") {
+      if (
+        /^(?:GH|GITHUB)_.*TOKEN$/u.test(key) ||
+        key === "OPENCLAW_GH_BIN" ||
+        key === "OPENCLAW_GH_READ_BIN"
+      ) {
         delete githubEnv[key];
       }
     }
@@ -706,6 +710,7 @@ if (args[0] === "api" && method === "POST" && endpoint.endsWith("/git/refs")) {
     }
     if (options.ghRoute !== "path") {
       githubEnv.OPENCLAW_GH_BIN = selectedGhPath;
+      githubEnv.OPENCLAW_GH_READ_BIN = selectedGhPath;
     }
     return spawnSync(
       testNodeExecPath,

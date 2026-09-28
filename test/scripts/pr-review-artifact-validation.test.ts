@@ -207,6 +207,7 @@ function runMergeVerification(
         'pr_gh_quota_read() { pr_gh_plain "$@"; }',
         `merge_rest() { echo 'REST policy requires GraphQL' >&2; printf '%s\\n' '{"restUnavailable":true}'; }`,
         "pr_gh() {",
+        `  if [ "$*" = "issue-comments fixture/repo github.com 42" ]; then printf '%s\\n' ${JSON.stringify(reviewComments)}; return; fi`,
         '  test "$*" = "pr view 42 --json number,url,title,state,isDraft,author,baseRefName,baseRefOid,baseRepository,headRefName,headRefOid,headRepository,headRepositoryOwner,isCrossRepository" || return 99',
         `  printf '%s\\n' '${JSON.stringify(observation)}'`,
         "}",

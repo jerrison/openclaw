@@ -6,7 +6,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { isDirectRunUrl } from "./lib/direct-run.mjs";
 import { parsePositiveInt } from "./lib/numeric-options.mjs";
-import { execPlainGh } from "./lib/plain-gh.mjs";
+import { execGhRead } from "./lib/plain-gh.mjs";
 
 const DEFAULT_GITHUB_REPOSITORY = "openclaw/openclaw";
 const RUN_JOBS_PAGE_SIZE = 100;
@@ -27,7 +27,7 @@ function parseJsonCommand(command, args, onAttempt = null, options = {}) {
       onAttempt?.();
       const stdout =
         command === "gh"
-          ? execPlainGh(args, {
+          ? execGhRead(args, {
               encoding: "utf8",
               ...options,
             })
@@ -189,7 +189,7 @@ export function selectLatestMainPushCiRun(runs, headSha = null) {
 }
 
 function getLatestCiRunId() {
-  const raw = execPlainGh(
+  const raw = execGhRead(
     ["run", "list", "--branch", "main", "--workflow", "CI", "--limit", "1", "--json", "databaseId"],
     { encoding: "utf8" },
   );
@@ -212,7 +212,7 @@ function getRemoteMainSha() {
 
 function getLatestMainPushCiRunId() {
   const headSha = getRemoteMainSha();
-  const raw = execPlainGh(
+  const raw = execGhRead(
     [
       "run",
       "list",
@@ -236,7 +236,7 @@ function getLatestMainPushCiRunId() {
 }
 
 function listRecentSuccessfulCiRuns(limit) {
-  const raw = execPlainGh(
+  const raw = execGhRead(
     [
       "run",
       "list",

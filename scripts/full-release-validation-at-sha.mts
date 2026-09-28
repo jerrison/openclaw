@@ -48,7 +48,7 @@ import {
   readBoundedRegularFile,
 } from "./lib/actions-artifact-archive.mjs";
 import { requireOptionArgument } from "./lib/arg-utils.mts";
-import { execPlainGh } from "./lib/plain-gh.mjs";
+import { execGhRead, execPlainGh } from "./lib/plain-gh.mjs";
 import { parseReleaseContextRef, resolveReleaseContextIdentity } from "./lib/release-context.mjs";
 import { validatePackageSourceRef } from "./package-source-preflight.mjs";
 
@@ -257,7 +257,7 @@ function runGhStatus(args: string[], options: CommandOptions = {}): CommandStatu
       signal: null,
       status: 0,
       stderr: "",
-      stdout: execPlainGh(args, {
+      stdout: execGhRead(args, {
         encoding: "utf8",
         killSignal: "SIGKILL",
         stdio: options.stdio ?? ["ignore", "pipe", "inherit"],
@@ -287,7 +287,7 @@ function readGhApi(
   fields: string[] = [],
   options: ExecFileSyncOptionsWithStringEncoding = GH_READ_OPTIONS,
 ) {
-  return execPlainGh(
+  return execGhRead(
     [
       "api",
       "--method",
@@ -1239,12 +1239,12 @@ async function readDispatchWitness(request: DispatchRequest, observed: DispatchR
   } satisfies ExecFileSyncOptionsWithBufferEncoding;
   let archiveBytes: Uint8Array<ArrayBuffer>;
   try {
-    archiveBytes = execPlainGh([...archiveArgs, "--allow-escape-sequences"], archiveOptions);
+    archiveBytes = execGhRead([...archiveArgs, "--allow-escape-sequences"], archiveOptions);
   } catch (error) {
     if (!isUnsupportedAllowEscapeSequencesFlag(error)) {
       throw error;
     }
-    archiveBytes = execPlainGh(archiveArgs, archiveOptions);
+    archiveBytes = execGhRead(archiveArgs, archiveOptions);
   }
   requireDispatch(
     archiveBytes.byteLength === metadata.size_in_bytes &&

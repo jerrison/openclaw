@@ -966,7 +966,7 @@ if (args[1] === "--help") {
             cwd: fileURLToPath(new URL("../../", import.meta.url)),
             encoding: "utf8",
             timeout: 30_000,
-            env: { ...process.env, OPENCLAW_GH_BIN: fakeGh, GH_TOKEN: "fixture-token" },
+            env: { ...process.env, OPENCLAW_GH_READ_BIN: fakeGh, GH_TOKEN: "fixture-token" },
           },
         ),
     });

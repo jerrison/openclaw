@@ -43,19 +43,22 @@ beforeAll(() => {
 
 function makeCommandFixture(parent?: string) {
   const root = commandDirs.make("plain-gh-commands-", parent);
-  // Both extensionless command routes use CommonJS, independent of the temp parent.
+  // Extensionless command routes use CommonJS, independent of the temp parent.
   writeFileSync(path.join(root, "package.json"), '{"type":"commonjs"}\n');
   const home = path.join(root, "home");
   const protectedBin = path.join(home, "bin");
   const secondBin = path.join(root, "second");
+  const shimBin = path.join(home, ".local", "share", "octopool", "bin");
   const toolsBin = path.join(root, "tools");
-  for (const dir of [protectedBin, secondBin, toolsBin]) {
+  for (const dir of [protectedBin, secondBin, shimBin, toolsBin]) {
     mkdirSync(dir, { recursive: true });
   }
   symlinkSync("/usr/bin/env", path.join(toolsBin, "env"));
+  symlinkSync(testNodeExecPath, path.join(toolsBin, "node"));
   for (const [dir, route] of [
     [protectedBin, "protected"],
     [secondBin, "second"],
+    [shimBin, "octopool"],
   ] as const) {
     const gh = path.join(dir, "gh");
     writeFileSync(
@@ -65,6 +68,7 @@ const fs = require("node:fs");
 const env = process.env;
 const argv = process.argv.slice(2);
 const route = ${JSON.stringify(route)};
+if (route === "octopool") process.stderr.write("Octopool fixture notice\\n");
 fs.appendFileSync(env.FAKE_GH_CALLS, JSON.stringify({ route, argv, override: env.OPENCLAW_GH_BIN ?? null }) + "\\n");
 if (argv[0] === "auth" && argv[1] === "token") {
   process.stdout.write("fixture-token\\n");
@@ -85,13 +89,13 @@ if (argv[0] === "auth" && argv[1] === "token") {
     );
     chmodSync(gh, 0o755);
   }
-  return { home, protectedBin, secondBin, toolsBin };
+  return { home, protectedBin, secondBin, shimBin, toolsBin };
 }
 
 function makeFixture(fixtureCommands = commands) {
   const root = tempDirs.make("plain-gh-");
   // Share executable files only; environments and outputs stay private to each test.
-  const { home, protectedBin, secondBin, toolsBin } = fixtureCommands;
+  const { home, protectedBin, secondBin, shimBin, toolsBin } = fixtureCommands;
   const calls = path.join(root, "calls.jsonl");
   writeFileSync(calls, "");
   const env: NodeJS.ProcessEnv = {
@@ -109,6 +113,7 @@ function makeFixture(fixtureCommands = commands) {
     home,
     protectedBin,
     secondBin,
+    shimBin,
     toolsBin,
     env,
     override: path.join(secondBin, "gh"),
@@ -121,14 +126,19 @@ function makeFixture(fixtureCommands = commands) {
   };
 }
 
-function runGh(engine: (typeof engines)[number], env: NodeJS.ProcessEnv, cwd?: string) {
+function runGh(
+  engine: (typeof engines)[number],
+  env: NodeJS.ProcessEnv,
+  cwd?: string,
+  args = ["--version"],
+) {
   const options = { cwd, encoding: "utf8" as const, env, stdio: "pipe" as const };
   if (engine === "Node") {
-    return execPlainGh(["--version"], options);
+    return execPlainGh(args, options);
   }
   return execFileSync(
     "/bin/bash",
-    ["-c", 'source "$1"; shift; gh_plain "$@"', "plain-gh", shellHelper, "--version"],
+    ["-c", 'source "$1"; shift; gh_plain "$@"', "plain-gh", shellHelper, ...args],
     options,
   );
 }
@@ -314,6 +324,79 @@ if (JSON.stringify(process.env) !== before) throw new Error("parent environment 
 });
 
 describe("plain gh subprocess contracts", () => {
+  it.each(["shell", "Node", "async"] as const)(
+    "keeps %s reads independent from the writer, including shim notices and explicit opt-out",
+    async (engine) => {
+      const fixture = makeFixture();
+      fixture.env.OPENCLAW_GH_BIN = fixture.override;
+      fixture.env.GH_TOKEN = "fixture-ambient";
+      const args = ["api", "repos/example/repo", "--method", "GET"];
+      const writeArgs = ["pr", "merge", "42", "--squash", "--match-head-commit", "a".repeat(40)];
+      const options = { encoding: "utf8" as const, env: fixture.env, stdio: "pipe" as const };
+      const read = () => {
+        if (engine === "async") {
+          return execGhReadAsync(args, options);
+        }
+        if (engine === "Node") {
+          return execGhRead(args, options);
+        }
+        return execFileSync(
+          "/bin/bash",
+          [
+            "-c",
+            'source "$1"; shift; pr_gh "$@"',
+            "read-gh",
+            path.resolve("scripts/pr-lib/github.sh"),
+            ...args,
+          ],
+          options,
+        );
+      };
+      for (const { shim, override, route } of [
+        { shim: true, override: undefined, route: "octopool" },
+        { shim: true, override: "", route: "octopool" },
+        { shim: true, override: fixture.override, route: "second" },
+        { shim: false, override: undefined, route: "protected" },
+        { shim: false, override: path.join(fixture.shimBin, "gh"), route: "octopool" },
+      ]) {
+        fixture.env.PATH = [
+          ...(shim ? [fixture.shimBin] : []),
+          fixture.protectedBin,
+          fixture.toolsBin,
+        ].join(path.delimiter);
+        fixture.env.OPENCLAW_GH_READ_BIN = override;
+        const before = { ...fixture.env };
+        expect(JSON.parse(await read())).toMatchObject({
+          route,
+          argv: args,
+          override: null,
+          colors: { NO_COLOR: "1", FORCE_COLOR: "0", CLICOLOR: "0", CLICOLOR_FORCE: "0" },
+        });
+        expect(
+          JSON.parse(
+            runGh(engine === "shell" ? "shell" : "Node", fixture.env, undefined, writeArgs),
+          ),
+        ).toMatchObject({ route: "second", argv: writeArgs, override: fixture.override });
+        expect(fixture.env).toEqual(before);
+      }
+      expect(fixture.calls()).toHaveLength(10);
+    },
+  );
+
+  it("refuses an invalid read override without falling back to PATH", async () => {
+    const fixture = makeFixture();
+    fixture.env.OPENCLAW_GH_READ_BIN = path.join(fixture.root, "not-executable");
+    writeFileSync(fixture.env.OPENCLAW_GH_READ_BIN, "not executable");
+    const options = { encoding: "utf8" as const, env: fixture.env };
+    expect(() => execGhRead(["--version"], options)).toThrow(
+      "OPENCLAW_GH_READ_BIN is not executable",
+    );
+    await expect(execGhReadAsync(["--version"], options)).rejects.toThrow(
+      "OPENCLAW_GH_READ_BIN is not executable",
+    );
+    expect(fixture.calls()).toEqual([]);
+  });
+
   it("ignores a shell function shadowing the external PATH executable", () => {
     const fixture = makeFixture();
     const output = execFileSync(
@@ -426,11 +509,13 @@ describe("plain gh subprocess contracts", () => {
   );
 
   it("preserves bounded read options and invocation errors", () => {
+    const fixture = makeFixture();
     const calls: unknown[][] = [];
     expect(
       execGhJson(
         ["api", "repos/example/repo"],
         {
+          env: { ...fixture.env, OPENCLAW_GH_READ_BIN: fixture.override },
           killSignal: "SIGKILL",
           stdio: ["ignore", "pipe", "inherit"],
           timeout: 60_000,
@@ -445,7 +530,7 @@ describe("plain gh subprocess contracts", () => {
     ).toEqual({ ok: true });
     expect(calls).toEqual([
       [
-        "gh",
+        fixture.override,
         ["api", "repos/example/repo"],
         expect.objectContaining({
           encoding: "utf8",

@@ -1,6 +1,7 @@
 import { execFile, execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
 /** @typedef {import("node:child_process").ExecFileSyncOptions} ExecFileSyncOptions */
@@ -192,9 +193,10 @@ export function execPlainGh(args, options = {}) {
  */
 export function execGhRead(args, options = {}, params = {}) {
   const execFileSyncImpl = params.execFileSyncImpl ?? execFileSync;
-  return execFileSyncImpl("gh", args, {
+  const env = ghReadEnv(options.env);
+  return execFileSyncImpl(resolveGhReadBin(env, options.cwd), args, {
     ...options,
-    env: ghReadEnv(options.env),
+    env,
     maxBuffer: options.maxBuffer ?? PLAIN_GH_MAX_BUFFER_BYTES,
   });
 }
@@ -208,15 +210,33 @@ function ghReadEnv(env) {
 }
 
 /**
+ * @param {NodeJS.ProcessEnv} env Normalized read environment without the writer override.
+ * @param {string | URL} [cwd]
+ */
+function resolveGhReadBin(env, cwd = process.cwd()) {
+  const directory = typeof cwd === "string" ? cwd : fileURLToPath(cwd);
+  if (env.OPENCLAW_GH_READ_BIN) {
+    const candidate = path.resolve(directory, env.OPENCLAW_GH_READ_BIN);
+    if (!isExecutable(candidate)) {
+      throw new Error(`OPENCLAW_GH_READ_BIN is not executable: ${env.OPENCLAW_GH_READ_BIN}`);
+    }
+    return candidate;
+  }
+  // PATH selects Octopool when installed, otherwise the operator's existing CLI.
+  return resolvePlainGhBin(env, directory);
+}
+
+/**
  * @param {readonly string[]} args
  * @param {import("node:child_process").ExecFileOptions} [options]
  * @returns {Promise<string>}
  */
 export async function execGhReadAsync(args, options = {}) {
-  const { stdout } = await execFileAsync("gh", args, {
+  const env = ghReadEnv(options.env);
+  const { stdout } = await execFileAsync(resolveGhReadBin(env, options.cwd), args, {
     ...options,
     encoding: "utf8",
-    env: ghReadEnv(options.env),
+    env,
     maxBuffer: options.maxBuffer ?? PLAIN_GH_MAX_BUFFER_BYTES,
   });
   return stdout;

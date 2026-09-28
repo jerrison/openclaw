@@ -47,12 +47,7 @@ import { inspectActionsArtifactZip } from "./lib/actions-artifact-archive.mjs";
 import { sortJsonValueKeys } from "./lib/canonical-json.mjs";
 import { releaseChildReuseSha256 } from "./lib/full-release-child-request.mjs";
 import { validateReusableReleaseChild } from "./lib/full-release-child-reuse.mjs";
-import {
-  execGhRead,
-  execGhReadAsync,
-  plainGhAuthenticatedEnv,
-  resolvePlainGhBin,
-} from "./lib/plain-gh.mjs";
+import { execGhRead, execGhReadAsync } from "./lib/plain-gh.mjs";
 import { resolveReleaseContextIdentity } from "./lib/release-context.mjs";
 import { resolveReleasePublishInputs } from "./lib/release-publish-inputs.mjs";
 
@@ -323,8 +318,7 @@ function downloadArtifactZip(artifactId, destination, sizeInBytes, repository = 
   for (let attempt = 1; attempt <= ARTIFACT_DOWNLOAD_ATTEMPTS; attempt += 1) {
     const output = openSync(destination, "w");
     try {
-      execFileSync(resolvePlainGhBin(), artifactDownloadArgs(artifactId, repository), {
-        env: plainGhAuthenticatedEnv(),
+      execGhRead(artifactDownloadArgs(artifactId, repository), {
         killSignal: "SIGKILL",
         maxBuffer: 64 * 1024 * 1024,
         stdio: ["ignore", output, "pipe"],

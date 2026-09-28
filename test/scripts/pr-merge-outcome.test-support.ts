@@ -664,7 +664,7 @@ ensure_gh_api_auth() { :; }
 verify_prep_branch_matches_prepared_head() { [ "$(command git rev-parse HEAD)" = "$2" ]; }
 node() { if [[ "$1" == */watch-pr-ci.mjs ]]; then shift; command node "$FIXTURE_GH" watch "$@"; else command node "$@"; fi; }
 pr_gh() {
-  if [ "$1" = commit-authors ] || { [ "$1" = pr ] && [ "$2" = view ]; }; then pr_gh_run read "$@";
+  if [ "$1" = commit-authors ] || [ "$1" = issue-comments ] || { [ "$1" = pr ] && [ "$2" = view ]; }; then pr_gh_run read "$@";
   else command node "$FIXTURE_GH" path "$@"; fi
 }
 pr_gh_plain() {

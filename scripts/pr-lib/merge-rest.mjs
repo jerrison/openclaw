@@ -71,11 +71,11 @@ function apiArgs(repo, endpoint, extra = []) {
   ];
 }
 
-function read(repo, endpoint, paginate = false) {
+function read(repo, endpoint, paginate = false, route = "read") {
   return execPrGhJson(
     apiArgs(repo, endpoint, paginate ? ["--paginate", "--slurp"] : []),
     {},
-    "plain",
+    route,
   );
 }
 
@@ -122,7 +122,7 @@ export function readMergePolicy(repo) {
     protection.status === "404" && protection.body?.message === "Branch not protected",
     "classic branch protection is not supported",
   );
-  const rules = pageArrays(read(repo, "/rules/branches/main?per_page=100", true));
+  const rules = pageArrays(read(repo, "/rules/branches/main?per_page=100", true, "plain"));
   for (const rule of rules) {
     requireEvidence(nonemptyString(rule?.type), "missing effective branch rule");
     requireRestSupport(RULE_TYPES.has(rule.type), "unsupported effective branch rule");

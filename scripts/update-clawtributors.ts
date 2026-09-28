@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import pMap, { pMapSkip } from "p-map";
 import { expectDefined } from "../packages/normalization-core/src/expect.js";
 import { readBoundedResponseBytes } from "./lib/bounded-response.mjs";
-import { execPlainGh } from "./lib/plain-gh.mjs";
+import { execGhRead } from "./lib/plain-gh.mjs";
 import type { ApiContributor, Entry, MapConfig, User } from "./update-clawtributors.types.js";
 
 const REPO = "openclaw/openclaw";
@@ -379,7 +379,7 @@ function run(cmd: string): string {
 }
 
 function runGh(args: string[]): string {
-  return execPlainGh(args, {
+  return execGhRead(args, {
     encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"],
     maxBuffer: 1024 * 1024 * 200,

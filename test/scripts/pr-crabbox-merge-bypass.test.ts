@@ -486,6 +486,7 @@ else if (endpoint === "graphql" && args.some(arg => arg.includes("repository(own
           PATH: `${bin}${delimiter}${process.env.PATH ?? ""}`,
           GH_TOKEN: "synthetic-token",
           OPENCLAW_GH_BIN: override ? selected : "",
+          OPENCLAW_GH_READ_BIN: override ? selected : "",
           FAKE_DENIED: denied,
           FAKE_DISPATCH: command.includes("finalize_remote_crabbox_aws_gate") ? "1" : "",
           FAKE_REVOKE: revoke ? "1" : "",

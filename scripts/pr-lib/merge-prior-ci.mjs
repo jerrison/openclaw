@@ -93,8 +93,7 @@ function verifyPriorCiAdmin({ evidencePath, repository, pr, head, actor }) {
     "Cache-Control: max-age=0",
     ...(paginate ? ["--paginate", "--slurp"] : []),
   ];
-  const read = (endpoint, paginate = false) =>
-    execPrGhJson(apiArgs(endpoint, paginate), {}, "plain");
+  const read = (endpoint, paginate = false) => execPrGhJson(apiArgs(endpoint, paginate));
   const writerRead = (endpoint) => {
     const response = parseGithubResponse(
       execPrGh([...apiArgs(endpoint), "--include"], { encoding: "utf8" }, "plain"),

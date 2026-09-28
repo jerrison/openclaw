@@ -393,7 +393,7 @@ if (endpoint.includes("actions/workflows/ci.yml/runs?")) {
             FIXTURE_NOW_MS: String(fixtureNowMs),
             FIXTURE_RETRY_MARKER: retryMarkerPath,
             GH_TOKEN: "fixture-ci-timing-token",
-            OPENCLAW_GH_BIN: fakeGhPath,
+            OPENCLAW_GH_READ_BIN: fakeGhPath,
           },
         },
       );
@@ -478,7 +478,7 @@ if (args[0] === "run" && args[1] === "list") {
         env: {
           ...process.env,
           GH_TOKEN: "fixture-token",
-          OPENCLAW_GH_BIN: fakeGhPath,
+          OPENCLAW_GH_READ_BIN: fakeGhPath,
           FIXTURE_CALLS_PATH: callsPath,
         },
       });

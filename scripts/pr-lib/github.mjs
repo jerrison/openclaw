@@ -356,6 +356,7 @@ function readRepoAuthority(repo, route) {
         "query($owner:String!,$name:String!){repository(owner:$owner,name:$name){id databaseId nameWithOwner url}}",
         repositoryVariables(repo),
         route,
+        { revalidate: true },
       ).repository;
       validateRepoAuthority(repo, record);
       return {
@@ -392,6 +393,7 @@ function readIssueComments(repo, pr, route) {
             "query($owner:String!,$name:String!,$number:Int!,$cursor:String){repository(owner:$owner,name:$name){pullRequest(number:$number){comments(first:100,after:$cursor){totalCount pageInfo{hasNextPage endCursor} nodes{id databaseId body url createdAt updatedAt author{login __typename ... on User{id databaseId} ... on Bot{id databaseId}}}}}}}",
             { ...repositoryVariables(repo), number: Number(pr), cursor },
             route,
+            { revalidate: true },
           ).repository?.pullRequest?.comments,
       );
       const seen = new Set();
@@ -631,7 +633,7 @@ function readPrRest(repo, pr, fields, route, options = {}) {
   };
   if (fields.includes("files")) {
     result.files = pageItems(
-      api(repo, `repos/${repo.name}/pulls/${pr}/files?per_page=100`, "plain", true, freshOptions),
+      api(repo, `repos/${repo.name}/pulls/${pr}/files?per_page=100`, route, true, freshOptions),
     ).map((file) => ({
       path: file.filename,
       additions: file.additions,

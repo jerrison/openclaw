@@ -551,11 +551,11 @@ describe("original publication admission reader", () => {
       writeFileSync(
         pendingGh,
         `#!${process.execPath}
-require("node:fs").writeFileSync(${JSON.stringify(ready)}, String(process.pid));
 const parent = process.ppid;
 process.once("exit", () => require("node:fs").writeFileSync(${JSON.stringify(settled)}, "settled"));
 setInterval(() => { if (process.ppid !== parent) process.exit(0); }, 10);
 setTimeout(() => {}, 30000);
+require("node:fs").writeFileSync(${JSON.stringify(ready)}, String(process.pid));
 `,
         { mode: 0o755 },
       );
@@ -1034,7 +1034,7 @@ describe("GitHub API commands", () => {
   });
 
   it.skipIf(!hasUnzip)(
-    "routes evidence reads through cached GitHub and downloads through plain GitHub",
+    "routes evidence and binary downloads through the reader without parsing its stderr notices",
     () => {
       const root = mkdtempSync(join(tmpdir(), "release-ci-gh-routing-"));
       const workflowSha = "0".repeat(40);
@@ -1148,11 +1148,15 @@ describe("GitHub API commands", () => {
 import { appendFileSync, readFileSync } from "node:fs";
 const args = process.argv.slice(2);
 appendFileSync(process.env.SHIM_LOG, JSON.stringify(args) + "\\n");
+console.error("Octopool fixture: cached read");
 const fixtures = JSON.parse(readFileSync(process.env.FIXTURES, "utf8"));
 const endpoint = args[1] ?? "";
+if (endpoint === "repos/openclaw/openclaw/actions/artifacts/${artifactId}/zip") {
+  process.stdout.write(readFileSync(process.env.ARCHIVE));
+  process.exit(0);
+}
 let output;
 if (args[0] === "run" && args[1] === "view") output = fixtures.parentView;
-else if (args[0] === "auth" && args[1] === "token") output = "wrapper-only-token";
 else if (endpoint === "rate_limit") output = fixtures.rate;
 else if (endpoint === "repos/openclaw/openclaw/contents/.github/workflows/full-release-validation.yml?ref=${workflowSha}") output = fixtures.workflow;
 else if (endpoint === "repos/openclaw/openclaw/actions/runs/${runId}") output = fixtures.parent;
@@ -1169,18 +1173,11 @@ process.stdout.write(typeof output === "string" ? output : JSON.stringify(output
       writeFileSync(
         plainGh,
         `#!/usr/bin/env node
-import { appendFileSync, readFileSync } from "node:fs";
+import { appendFileSync } from "node:fs";
 const args = process.argv.slice(2);
 appendFileSync(process.env.PLAIN_LOG, JSON.stringify(args) + "\\n");
-if (process.env.GH_TOKEN !== "wrapper-only-token") {
-  console.error("plain gh did not receive wrapper authentication");
-  process.exit(41);
-}
-if (args[0] !== "api" || args[1] !== "repos/openclaw/openclaw/actions/artifacts/${artifactId}/zip") {
-  console.error("plain gh used for evidence read: " + args.join(" "));
-  process.exit(42);
-}
-process.stdout.write(readFileSync(process.env.ARCHIVE));
+console.error("write binary used for evidence read: " + args.join(" "));
+process.exit(42);
 `,
       );
       chmodSync(shimGh, 0o755);
@@ -1200,6 +1197,7 @@ process.stdout.write(readFileSync(process.env.ARCHIVE));
         delete env.GITHUB_ENTERPRISE_TOKEN;
         delete env.GITHUB_TOKEN;
         delete env.GH_TOKEN;
+        delete env.OPENCLAW_GH_READ_BIN;
         const lineageResult = spawnSync(
           process.execPath,
           [
@@ -1225,9 +1223,8 @@ process.stdout.write(readFileSync(process.env.ARCHIVE));
         );
         expect(result.stdout).not.toContain("Advisory lane failed");
         const shimCalls = readFileSync(shimLog, "utf8");
-        const plainCalls = readFileSync(plainLog, "utf8");
         expect(shimCalls).toContain('"run","view"');
-        expect(shimCalls).toContain('"auth","token"');
+        expect(shimCalls).not.toContain('"auth","token"');
         expect(shimCalls).toContain(`"repos/openclaw/openclaw/actions/runs/${runId}"`);
         expect(shimCalls).toContain(
           `"repos/openclaw/openclaw/compare/${workflowSha}...${verifierSha}?per_page=1&page=2"`,
@@ -1239,10 +1236,10 @@ process.stdout.write(readFileSync(process.env.ARCHIVE));
             "--allow-escape-sequences",
           ]),
         );
-        expect(shimCalls).not.toContain(`/actions/artifacts/${artifactId}/zip`);
-        expect(plainCalls.trim()).toBe(
+        expect(shimCalls).toContain(
           JSON.stringify(["api", `repos/openclaw/openclaw/actions/artifacts/${artifactId}/zip`]),
         );
+        expect(existsSync(plainLog)).toBe(false);
       } finally {
         rmSync(root, { force: true, recursive: true });
       }

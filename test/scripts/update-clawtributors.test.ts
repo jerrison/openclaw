@@ -94,7 +94,7 @@ function mockClawtributorsFixture({
     }
     throw new Error(`unexpected command: ${cmd}`);
   });
-  const execPlainGh = vi.fn(
+  const execGhRead = vi.fn(
     (args: readonly string[], options: ExecFileSyncOptionsWithStringEncoding) => {
       if (runGh) {
         return runGh(args, options);
@@ -150,12 +150,12 @@ function mockClawtributorsFixture({
       throw new Error(`unexpected gh arguments: ${args.join(" ")}`);
     },
   );
-  vi.doMock("../../scripts/lib/plain-gh.mjs", () => ({ execPlainGh }));
+  vi.doMock("../../scripts/lib/plain-gh.mjs", () => ({ execGhRead }));
   vi.doMock("node:child_process", () => ({
     execSync,
   }));
   return {
-    execPlainGh,
+    execGhRead,
     readWrittenReadme: () => writtenReadme,
   };
 }
@@ -183,13 +183,13 @@ describe("update-clawtributors", () => {
       timeout: 120_000,
       killSignal: "SIGKILL",
     };
-    expect(fixture.execPlainGh).toHaveBeenNthCalledWith(
+    expect(fixture.execGhRead).toHaveBeenNthCalledWith(
       1,
       ["api", "repos/openclaw/openclaw/contributors?per_page=100&anon=1", "--paginate"],
       options,
     );
-    expect(fixture.execPlainGh).toHaveBeenNthCalledWith(2, ["api", "users/extra"], options);
-    expect(fixture.execPlainGh).toHaveBeenNthCalledWith(
+    expect(fixture.execGhRead).toHaveBeenNthCalledWith(2, ["api", "users/extra"], options);
+    expect(fixture.execGhRead).toHaveBeenNthCalledWith(
       3,
       [
         "pr",
@@ -224,7 +224,7 @@ describe("update-clawtributors", () => {
       code: "ETIMEDOUT",
       signal: "SIGKILL",
     });
-    expect(fixture.execPlainGh).toHaveBeenCalledTimes(1);
+    expect(fixture.execGhRead).toHaveBeenCalledTimes(1);
   });
 
   it("aborts on transient login lookup failures", async () => {
@@ -257,7 +257,7 @@ describe("update-clawtributors", () => {
 
     await importUpdateClawtributors();
 
-    expect(fixture.execPlainGh).toHaveBeenCalledWith(
+    expect(fixture.execGhRead).toHaveBeenCalledWith(
       ["api", "user/42"],
       expect.objectContaining({ timeout: 120_000, killSignal: "SIGKILL" }),
     );

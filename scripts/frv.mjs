@@ -28,7 +28,12 @@ import {
   inspectActionsArtifactZipWithPolicy,
   sha256Digest,
 } from "./lib/actions-artifact-archive.mjs";
-import { execPlainGh, plainGhAuthenticatedEnv, resolvePlainGhBin } from "./lib/plain-gh.mjs";
+import {
+  execGhRead,
+  execGhReadAsync,
+  plainGhAuthenticatedEnv,
+  resolvePlainGhBin,
+} from "./lib/plain-gh.mjs";
 import {
   RELEASE_PRIORITY_RECORD_KIND,
   RELEASE_PRIORITY_VARIABLE,
@@ -239,7 +244,7 @@ function isUnknownAllowEscapeSequencesFlag(error) {
   );
 }
 
-async function execGhRead(args, options = {}) {
+async function readGhWithRetry(args, options = {}) {
   const attempts = options.attempts ?? 4;
   let lastError;
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
@@ -248,10 +253,13 @@ async function execGhRead(args, options = {}) {
         ? Number.MAX_SAFE_INTEGER
         : remainingOperationTime(options.operationDeadline);
     try {
-      return await execGh(args, {
-        ...options,
-        timeoutMs: Math.min(options.timeoutMs ?? 60_000, remaining),
-      });
+      return (
+        await execGhReadAsync(args, {
+          killSignal: "SIGKILL",
+          maxBuffer: 64 * 1024 * 1024,
+          timeout: Math.min(options.timeoutMs ?? 60_000, remaining),
+        })
+      ).trim();
     } catch (error) {
       lastError = error;
       if (attempt === attempts || classifyReleaseGhTransportError(error) !== "transient") {
@@ -273,7 +281,7 @@ async function execGhRead(args, options = {}) {
 
 function readFreshGhApi(repository, path, args = [], options = {}) {
   // Rerun decisions require current attempts and jobs, not a relay's earlier snapshot.
-  return execGhRead(
+  return readGhWithRetry(
     ["api", `repos/${repository}/${path}`, "-H", "Cache-Control: max-age=0", ...args],
     options,
   );
@@ -287,7 +295,7 @@ async function downloadExecutionPlan(repository, runId) {
   const directory = mkdtempSync(join(tmpdir(), "openclaw-frv-plan-"));
   try {
     try {
-      await execGhRead([
+      await readGhWithRetry([
         "run",
         "download",
         runId,
@@ -1653,7 +1661,7 @@ async function createPublicationReader(repository) {
     requirePublication(++requests <= limits.requests, "limits");
     let result;
     try {
-      result = execPlainGh(
+      result = execGhRead(
         [
           "api",
           "--hostname",

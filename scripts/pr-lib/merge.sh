@@ -41,7 +41,7 @@ record_crabbox_landing_parent_audit() {
     echo "merge completed; post-merge audit failed: unable to prepare the landing parent artifact." >&2
     return 1
   fi
-  if ! pr_gh_plain api "repos/$MERGE_REPO_NAME/commits/$landed_sha" >"$commit_file"; then
+  if ! pr_gh api "repos/$MERGE_REPO_NAME/commits/$landed_sha" >"$commit_file"; then
     rm -f "$audit_tmp"
     echo "Admin landing parent audit failed after merge: unable to read landed commit $landed_sha." >&2
     return 1
@@ -107,7 +107,7 @@ verify_prior_ci_admin() {
 
 fetch_clawsweeper_review_comments() {
   local pr="$1" repo_name="$2" repo_host="$3"
-  if ! CLAWSWEEPER_REVIEW_COMMENTS=$(pr_gh_plain issue-comments "$repo_name" "$repo_host" "$pr"); then
+  if ! CLAWSWEEPER_REVIEW_COMMENTS=$(pr_gh issue-comments "$repo_name" "$repo_host" "$pr"); then
     echo "ClawSweeper review gate failed: unable to read current issue comments." >&2
     return 1
   fi
@@ -128,7 +128,7 @@ validate_clawsweeper_review_comments() {
 require_clawsweeper_review() {
   local pr="$1" head_sha="$2" repo_name="${3:-}" repo_host="${4:-}" repo_json
   if [ -z "$repo_name" ] || [ -z "$repo_host" ]; then
-    repo_json=$(pr_gh_plain repo view --json nameWithOwner,url) || return 1
+    repo_json=$(pr_gh repo view --json nameWithOwner,url) || return 1
     repo_name=$(printf '%s\n' "$repo_json" | jq -er '.nameWithOwner | select(type == "string" and length > 0)') || return 1
     repo_host=$(printf '%s\n' "$repo_json" | jq -er '.url | capture("^https://(?<host>[^/]+)/").host') || return 1
   fi

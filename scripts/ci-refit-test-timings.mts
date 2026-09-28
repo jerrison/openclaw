@@ -9,7 +9,7 @@ import { isRetryableGhJsonErrorMessage } from "./ci-run-timings.mjs";
 import { refitTestTimings, type CiTimingRun } from "./lib/ci-test-timings-refit.mts";
 import { ciTestTimingsSchema } from "./lib/ci-test-timings-schema.mts";
 import { parsePositiveInt } from "./lib/numeric-options.mjs";
-import { execPlainGh } from "./lib/plain-gh.mjs";
+import { execGhRead } from "./lib/plain-gh.mjs";
 
 const jobPageSchema = z.object({
   total_count: z.number().int().nonnegative(),
@@ -37,7 +37,7 @@ async function readGh(args: string[]): Promise<string> {
   const retryDelays = [1000, 3000, 6000];
   for (let attempt = 0; ; attempt += 1) {
     try {
-      return execPlainGh(args, {
+      return execGhRead(args, {
         encoding: "utf8",
         timeout: 120_000,
         stdio: ["ignore", "pipe", "pipe"],

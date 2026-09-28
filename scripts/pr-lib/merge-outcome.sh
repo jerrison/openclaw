@@ -325,7 +325,7 @@ merge_rest() {
   if [ "$mode" = observe ] && [ "${MERGE_ADMISSION_ACTIVE:-false}" = true ] && [ "${MERGE_USE_CRABBOX_ADMIN_BYPASS:-false}" = false ] && [ "${MERGE_USE_PRIOR_CI_ADMIN:-false}" = false ]; then
     mode=observe-admission
   fi
-  [ -n "$repo" ] || repo=$(pr_gh_plain repo view --json id,nameWithOwner,url) || return 1
+  [ -n "$repo" ] || repo=$(pr_gh repo view --json id,nameWithOwner,url) || return 1
   node "${BASH_SOURCE[0]%/*}/merge-rest.mjs" "$mode" "$repo" "$pr" "$@"
 }
 
@@ -635,7 +635,7 @@ merge_outcome_find_comment() {
   local pr="$1" comments marker matches
   MERGE_COMPLETION_COMMENT_URL=""
   marker="<!-- openclaw-merge:$(printf '%s\n' "$MERGE_OUTCOME_RECORD" | jq -r .attempt) -->"
-  comments=$(pr_gh_plain issue-comments "$MERGE_REPO_NAME" "$MERGE_REPO_HOST" "$pr") || return 1
+  comments=$(pr_gh issue-comments "$MERGE_REPO_NAME" "$MERGE_REPO_HOST" "$pr") || return 1
   matches=$(printf '%s\n' "$comments" | jq -ce --arg marker "$marker" \
     '[.[][] | select(.body | contains($marker))] | if length <= 1 then . else error("ambiguous completion marker") end') || return 1
   if [ "$matches" != '[]' ]; then
@@ -692,7 +692,7 @@ merge_outcome_post_comment() {
 
 merge_outcome_head_branch() {
   local pr="$1" head_json
-  head_json=$(pr_gh_plain pr view "$pr" --repo "$MERGE_REPO_URL" --json headRefOid,headRefName,headRepository,headRepositoryOwner) || return 1
+  head_json=$(pr_gh pr view "$pr" --repo "$MERGE_REPO_URL" --json headRefOid,headRefName,headRepository,headRepositoryOwner) || return 1
   MERGE_HEAD_REF=$(printf '%s\n' "$head_json" | jq -er --arg head "$(printf '%s\n' "$MERGE_OUTCOME_RECORD" | jq -r .head)" \
     'select(.headRefOid == $head) | .headRefName | select(type == "string" and length > 0)') || return 1
   MERGE_HEAD_REPO=$(printf '%s\n' "$head_json" | jq -er '.headRepositoryOwner.login + "/" + .headRepository.name | select(test("^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"))') || return 1
