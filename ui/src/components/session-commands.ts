@@ -1,19 +1,30 @@
 import { t } from "../i18n/index.ts";
 import type { IconName } from "./icons.ts";
-import type { SessionManagementActionKind, SessionMenuData } from "./session-menu-actions.ts";
 
-/** Single-session actions that also run outside the menu, from the command palette. */
-export type SessionCommandKind = Extract<
-  SessionManagementActionKind,
-  "toggle-pin" | "rename" | "toggle-unread" | "toggle-archived" | "fork" | "delete"
->;
+// A leaf module: the session menu imports these rules, so nothing here may import the menu.
+
+/** Single-session menu actions that also run outside the menu, from the command palette. */
+export type SessionCommandKind =
+  | "toggle-pin"
+  | "rename"
+  | "toggle-unread"
+  | "toggle-archived"
+  | "fork"
+  | "delete";
 
 export type SessionCommand = { kind: SessionCommandKind; label: string; icon: IconName };
 
 type SessionCommandState = {
-  session: SessionMenuData;
+  session: {
+    pinnable?: boolean;
+    isChild?: boolean;
+    pinned: boolean;
+    unread: boolean;
+    archived: boolean;
+    archiving?: boolean;
+  };
   selectionCount: number;
-  actionDisabledReasons: Partial<Record<SessionManagementActionKind, string>>;
+  actionDisabledReasons: Partial<Record<SessionCommandKind, string>>;
   forkDisabled: boolean;
   archiveAllowed: boolean;
   deleteAllowed: boolean;
