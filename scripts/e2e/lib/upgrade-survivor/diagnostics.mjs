@@ -118,6 +118,7 @@ const logNames = [
   "dreaming-cron-proof.json",
   "cron-delivery-attempt-proof.json",
   "receipt-first-gateway.log",
+  "receipt-cron-runtime.log",
   "receipt-second-gateway.log",
   "legacy-operator-baseline-turn.out",
   "legacy-operator-baseline-turn.err",

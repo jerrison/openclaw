@@ -2184,18 +2184,29 @@ phase reset-run-state reset_run_state
 phase install-baseline install_baseline
 phase initialize-state initialize_state
 if [ "$SCENARIO" = "cron-delivery-attempt" ]; then
-  if [ "$baseline_spec" != "openclaw@2026.9.4" ] || [ "$CANDIDATE_KIND" != "tarball" ] ||
+  if [ "$baseline_spec" != "openclaw@2026.9.6" ] || [ "$CANDIDATE_KIND" != "tarball" ] ||
     [ "$UPDATE_RESTART_MODE" != "manual" ] || [ "$ROOT_MANAGED_VPS" != "0" ] || [ "$LIVE_ENABLED" != "0" ]; then
-    echo "$SCENARIO requires published openclaw@2026.9.4, a frozen candidate tarball, isolated manual restart, and no live provider" >&2
+    echo "$SCENARIO requires published openclaw@2026.9.6, a frozen candidate tarball, isolated manual restart, and no live provider" >&2
     exit 2
   fi
   export OPENCLAW_SKIP_CRON=0
   export OPENCLAW_SKIP_STARTUP_MODEL_PREWARM=1
-  phase receipt-baseline-identity node scripts/e2e/lib/upgrade-survivor/worker-cell-package.mjs baseline "$(package_root)"
+  phase receipt-baseline-identity node scripts/e2e/lib/upgrade-survivor/worker-cell-package.mjs baseline "$(package_root)" 2026.9.6
   phase receipt-candidate-version resolve_candidate_version
   phase receipt-candidate-identity prepare_worker_cell_package
-  phase receipt-seed-schema19 node scripts/e2e/lib/upgrade-survivor/cron-delivery-attempt.mjs seed
+  phase receipt-configure-baseline node scripts/e2e/lib/upgrade-survivor/cron-delivery-attempt.mjs configure
+  phase receipt-validate-baseline-config validate_baseline_config
+  phase receipt-prepare-baseline openclaw_e2e_maybe_timeout "$COMMAND_TIMEOUT" \
+    openclaw doctor --fix --non-interactive >"$BASELINE_DOCTOR_LOG" 2>&1
+  phase receipt-validate-prepared-baseline validate_baseline_config
+  # Finish baseline CLI commands before seeding interrupted receipts; only the
+  # installed updater and then the candidate may consume this legacy state.
+  phase receipt-seed-schema18 node scripts/e2e/lib/upgrade-survivor/cron-delivery-attempt.mjs seed
   phase receipt-original-driver-update update_candidate
+  if [ "$update_outcome" != "success" ] || [ "$update_repair_required" != "0" ]; then
+    echo "$SCENARIO requires the original published updater to succeed without follow-up repair" >&2
+    exit 1
+  fi
   phase receipt-installed-identity assert_worker_cell_update
   phase receipt-inspect-schema20 node scripts/e2e/lib/upgrade-survivor/cron-delivery-attempt.mjs upgraded
   phase receipt-standalone-doctor run_doctor
@@ -2204,13 +2215,14 @@ if [ "$SCENARIO" = "cron-delivery-attempt" ]; then
     GATEWAY_LOG="$ARTIFACT_ROOT/receipt-$startup-gateway.log"
     HEALTHZ_JSON="$ARTIFACT_ROOT/receipt-$startup-healthz.json"
     READYZ_JSON="$ARTIFACT_ROOT/receipt-$startup-readyz.json"
+    phase "receipt-$startup-before-start" node scripts/e2e/lib/upgrade-survivor/cron-delivery-attempt.mjs "before-$startup"
     phase "receipt-$startup-gateway-start" start_gateway
     phase "receipt-$startup-gateway-probes" check_gateway_probes
     phase "receipt-$startup-recovery" node scripts/e2e/lib/upgrade-survivor/cron-delivery-attempt.mjs "$startup"
     phase "receipt-$startup-gateway-stop" stop_gateway
   done
   run_completed="1"
-  echo "Cron delivery receipt survived the published updater, schema 19 to 20 migration, Doctor, and two candidate Gateway starts; legacy ambiguous one-shots remain disabled as Unknown."
+  echo "Cron delivery receipt survived the published updater, schema 18 to 20 migration, Doctor, and two candidate Gateway starts; legacy ambiguous one-shots remain disabled as Unknown."
   exit 0
 fi
 if [ "$SCENARIO" = "dreaming-cron-doctor" ]; then

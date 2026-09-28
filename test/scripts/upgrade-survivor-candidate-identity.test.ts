@@ -58,6 +58,7 @@ ARTIFACT_ROOT="$UNIT_ROOT/artifacts"
 RUNTIME_ROOT="$UNIT_ROOT/runtime"
 candidate_version=2026.9.6
 candidate_install_mode=updater
+native_assignment_enabled=0
 baseline_version=2026.9.6
 UPDATE_RESTART_MODE=manual
 export OPENCLAW_UPGRADE_SURVIVOR_ARTIFACT_ROOT="$ARTIFACT_ROOT"

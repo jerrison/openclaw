@@ -6,10 +6,19 @@ import { DatabaseSync } from "node:sqlite";
 import { setTimeout } from "node:timers/promises";
 
 const candidateCommit = "818dd85ae1892e4d63cd431ee00d3baff8e66be2";
-const schemaSourceCommit = "74b88a509d19878c3f74886f67e648929c62aee8";
-const schemaSha256 = "993e08e70b43a7a52e52eb95eda33c19832df4ee1ec4ef1fe4068a4caf38adc7";
 const stage = process.argv[2];
-assert(["seed", "upgraded", "doctor", "first", "second"].includes(stage));
+assert(
+  [
+    "configure",
+    "seed",
+    "upgraded",
+    "doctor",
+    "before-first",
+    "first",
+    "before-second",
+    "second",
+  ].includes(stage),
+);
 const state = process.env.OPENCLAW_STATE_DIR;
 const runtime = process.env.OPENCLAW_UPGRADE_SURVIVOR_RUNTIME_ROOT;
 const artifacts = process.env.OPENCLAW_UPGRADE_SURVIVOR_ARTIFACT_ROOT;
@@ -20,6 +29,11 @@ assert(path.resolve(configPath).startsWith(`${path.resolve(state)}/`));
 const readJson = (file) => JSON.parse(fs.readFileSync(file, "utf8"));
 const hash = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const proofPath = path.join(artifacts, "cron-delivery-attempt-proof.json");
+const runtimeLog = path.join(artifacts, "receipt-cron-runtime.log");
+const cronStarts = () =>
+  fs.existsSync(runtimeLog)
+    ? (fs.readFileSync(runtimeLog, "utf8").match(/"cron: started"/gu) ?? []).length
+    : 0;
 const databasePath = path.join(state, "state", "openclaw.sqlite");
 const storeKey = path.join(state, "cron", "jobs.json");
 const modes = ["announce", "webhook"];
@@ -34,7 +48,8 @@ const stable = (value) =>
     : value;
 const baseline = readJson(path.join(artifacts, "baseline-package-identity.json"));
 const candidate = readJson(path.join(artifacts, "candidate-package-identity.json"));
-assert.equal(baseline.version, "2026.9.4");
+assert.equal(baseline.version, "2026.9.6");
+assert.equal(baseline.buildInfo.commit, "eb377ac59e6c9fd6c7705028034812becf00271b");
 assert.equal(candidate.buildInfo.commit, candidateCommit);
 const compactIdentity = ({ version, buildInfo, sha256, integrity, files }) => ({
   version,
@@ -43,51 +58,80 @@ const compactIdentity = ({ version, buildInfo, sha256, integrity, files }) => ({
   integrity,
   applicationPayloadSha256: hash(JSON.stringify(files)),
 });
+if (stage === "configure") {
+  fs.mkdirSync(path.join(state, "workspace"), { recursive: true });
+  fs.writeFileSync(
+    configPath,
+    `${JSON.stringify(
+      {
+        gateway: {
+          mode: "local",
+          bind: "loopback",
+          controlUi: { enabled: false },
+          auth: { mode: "token", token: "upgrade-survivor-token" },
+        },
+        agents: {
+          ownership: "explicit",
+          defaults: { heartbeat: { every: "0m" } },
+          entries: { main: { workspace: path.join(state, "workspace") } },
+        },
+        logging: { level: "info", file: runtimeLog },
+        cron: { enabled: true },
+        plugins: { enabled: false },
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  process.exit(0);
+}
+assert(fs.statSync(databasePath).isFile(), "Baseline Doctor must create the schema-18 database");
 const proof =
   stage === "seed"
     ? {
-        contract:
-          "legacy ambiguous one-shots are disabled as Unknown after schema-19 to schema-20 upgrade",
+        contract: "published schema-18 ambiguous one-shots survive upgrade disabled as Unknown",
         baseline: compactIdentity(baseline),
         candidate: compactIdentity(candidate),
-        fixture: {
-          schemaVersion: 19,
-          sourceCommit: schemaSourceCommit,
-          schemaSha256,
-          note: "Schema-19 operator-state specimen; published 2026.9.4 driver itself declares schema 17.",
-        },
+        fixture: { schemaVersion: 18, createdBy: "published baseline Doctor", modes },
         stages: {},
       }
     : readJson(proofPath);
-if (stage === "seed") {
-  assert(!fs.existsSync(databasePath), "Refuse to overwrite an existing state database");
-  fs.mkdirSync(path.dirname(databasePath), { recursive: true });
-  const config = readJson(configPath);
-  config.gateway = {
-    ...config.gateway,
-    mode: "local",
-    bind: "loopback",
-    auth: { mode: "token", token: "upgrade-survivor-token" },
-  };
-  config.cron = { enabled: true };
-  // This storage witness has no channel/plugin workload or model credentials.
-  config.plugins = { enabled: false };
-  fs.writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`);
+if (stage === "before-first" || stage === "before-second") {
+  const startup = stage.slice("before-".length);
+  proof.gatewayStarts ??= {};
+  proof.gatewayStarts[startup] = { before: cronStarts() };
+  fs.writeFileSync(proofPath, `${JSON.stringify(proof, null, 2)}\n`);
+  process.exit(0);
 }
 const db = new DatabaseSync(databasePath, { readOnly: stage !== "seed" });
 try {
+  const readSchema = () => {
+    const userVersion = db.prepare("PRAGMA user_version").get().user_version;
+    const metadata = db.prepare("SELECT * FROM schema_meta WHERE meta_key = 'primary'").get();
+    const contentRow = db
+      .prepare("SELECT value_json FROM config_machine_state WHERE state_key = ?")
+      .get("state.schema.contentVersion");
+    const contentMarker = contentRow ? JSON.parse(contentRow.value_json) : null;
+    return {
+      userVersion,
+      metadata,
+      contentMarker,
+      contentVersion: Math.max(userVersion, contentMarker ?? 0),
+    };
+  };
   if (stage === "seed") {
-    const sql = fs.readFileSync(new URL("./cron-delivery-schema19.sql", import.meta.url));
-    assert.equal(hash(sql), schemaSha256, "Archived schema bytes changed");
-    db.exec(sql.toString());
+    const before = readSchema();
+    assert.equal(before.userVersion, 18);
+    assert.equal(before.metadata.schema_version, 18);
+    assert.equal(before.metadata.role, "global");
+    assert.equal(before.contentVersion, 18);
+    assert(
+      !db
+        .prepare("PRAGMA table_info(cron_run_receipts)")
+        .all()
+        .some((column) => column.name === "delivery_attempt_state"),
+    );
     db.exec("BEGIN IMMEDIATE");
-    db.prepare(
-      "INSERT INTO schema_meta VALUES ('primary', 'global', 19, NULL, '2026.9.6', ?, ?)",
-    ).run(startedAt, startedAt);
-    db.prepare(
-      "INSERT INTO config_machine_state VALUES ('state.schema.contentVersion', '19', ?)",
-    ).run(startedAt);
-    db.exec("PRAGMA user_version = 19");
     for (const [index, mode] of modes.entries()) {
       const id = `p04-legacy-${mode}`;
       const receiptId = `${id}-receipt`;
@@ -137,7 +181,7 @@ try {
       db.prepare(`INSERT INTO cron_run_receipts
         (receipt_id, store_key, job_id, config_revision, agent_id, status, owner_pid,
          owner_start_time, started_at_ms, finished_at_ms, error_text)
-        VALUES (?, ?, ?, ?, 'main', 'running', 2147483647, NULL, ?, NULL, NULL)`).run(
+        VALUES (?, ?, ?, ?, 'main', 'running', 2147483647, 1, ?, NULL, NULL)`).run(
         receiptId,
         storeKey,
         id,
@@ -145,44 +189,44 @@ try {
         startedAt,
       );
     }
+    assert.deepEqual(readSchema(), before, "Receipt seeding changed baseline schema metadata");
     db.exec("COMMIT");
+    proof.fixture.schemaBefore = before;
   }
   const readRows = () => ({
-    receipts: db.prepare("SELECT * FROM cron_run_receipts ORDER BY job_id").all(),
+    receipts: db
+      .prepare("SELECT * FROM cron_run_receipts WHERE job_id IN (?, ?) ORDER BY job_id")
+      .all(...modes.map((mode) => `p04-legacy-${mode}`)),
     jobs: db
       .prepare(
-        "SELECT job_id, enabled, state_json FROM cron_jobs WHERE store_key = ? ORDER BY job_id",
+        "SELECT job_id, enabled, state_json FROM cron_jobs WHERE store_key = ? AND job_id IN (?, ?) ORDER BY job_id",
       )
-      .all(storeKey),
+      .all(storeKey, ...modes.map((mode) => `p04-legacy-${mode}`)),
   });
-  // Gateway cron starts asynchronously after readiness. Observe that lifecycle
-  // transition, bounded by the existing startup budget, without invoking repair.
+  // Gateway readiness precedes detached cron startup. A fresh completion event
+  // proves both starts reached recovery/catch-up before inspecting SQLite.
   if (stage === "first" || stage === "second") {
     const deadline = Date.now() + 90_000;
-    while (readRows().receipts.some((row) => row.status === "running")) {
-      assert(Date.now() < deadline, "Gateway did not settle the legacy interrupted receipts");
+    const startsBefore = proof.gatewayStarts[stage].before;
+    assert(Number.isSafeInteger(startsBefore) && startsBefore >= 0);
+    while (
+      cronStarts() <= startsBefore ||
+      readRows().receipts.some((row) => row.status === "running")
+    ) {
+      assert(Date.now() < deadline, "Gateway did not finish cron startup and receipt recovery");
       await setTimeout(200);
     }
+    proof.gatewayStarts[stage].after = cronStarts();
   }
   assert.equal(db.prepare("PRAGMA integrity_check").get().integrity_check, "ok");
-  const userVersion = db.prepare("PRAGMA user_version").get().user_version;
-  const schemaVersion = db
-    .prepare("SELECT schema_version FROM schema_meta WHERE meta_key = 'primary'")
-    .get().schema_version;
-  const contentMarker = JSON.parse(
-    db
-      .prepare(
-        "SELECT value_json FROM config_machine_state WHERE state_key = 'state.schema.contentVersion'",
-      )
-      .get().value_json,
-  );
-  const contentVersion = Math.max(userVersion, contentMarker);
+  const { userVersion, metadata, contentMarker, contentVersion } = readSchema();
+  const schemaVersion = metadata.schema_version;
   const column =
     db
       .prepare("PRAGMA table_info(cron_run_receipts)")
       .all()
       .find((row) => row.name === "delivery_attempt_state") ?? null;
-  assert.equal(userVersion, stage === "seed" ? 19 : 20);
+  assert.equal(userVersion, stage === "seed" ? 18 : 20);
   assert.equal(schemaVersion, userVersion);
   assert.equal(contentVersion, userVersion);
   assert.equal(column?.name ?? null, stage === "seed" ? null : "delivery_attempt_state");
@@ -198,6 +242,8 @@ try {
     const job = rows.jobs[index];
     assert.equal(receipt.receipt_id, `p04-legacy-${mode}-receipt`);
     assert.equal(receipt.started_at_ms, startedAt);
+    assert.equal(receipt.owner_pid, 2147483647);
+    assert.equal(receipt.owner_start_time, 1);
     assert.equal(job.job_id, `p04-legacy-${mode}`);
     assert.equal(receipt.delivery_attempt_state, stage === "seed" ? undefined : "unknown");
     const jobState = JSON.parse(job.state_json);

@@ -5,11 +5,18 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const baselineVersion = "2026.9.4";
-const baselineCommit = "3a9d69db306cd7f081e06254cb89c4bcc14a7107";
-const baselineUrl = "https://registry.npmjs.org/openclaw/-/openclaw-2026.9.4.tgz";
-const baselineIntegrity =
-  "sha512-lTQpEEe1Xm3u2PCHaPEr+vP8paGk1vLdHuzdItsNToaLI6hAqRVvgJYg+GxukJhETJp4tPy/S1Gftl4KuB8n7A==";
+const publishedBaselines = {
+  "2026.9.4": {
+    commit: "3a9d69db306cd7f081e06254cb89c4bcc14a7107",
+    integrity:
+      "sha512-lTQpEEe1Xm3u2PCHaPEr+vP8paGk1vLdHuzdItsNToaLI6hAqRVvgJYg+GxukJhETJp4tPy/S1Gftl4KuB8n7A==",
+  },
+  "2026.9.6": {
+    commit: "eb377ac59e6c9fd6c7705028034812becf00271b",
+    integrity:
+      "sha512-Ie0kyQSCVfFqixsgVg39vevUDq01Ch5u3+7Yu5Y3qARczmdAe+lzp8bVnO9925rHiW/+CFp70zfORCyPmCH31g==",
+  },
+};
 
 function hash(bytes, algorithm = "sha256", encoding = "hex") {
   return createHash(algorithm).update(bytes).digest(encoding);
@@ -155,20 +162,25 @@ function inspectTarball(tarball, runtimeRoot) {
 }
 
 async function main() {
-  const [mode, packageRoot, candidateTarball] = process.argv.slice(2);
+  const [mode, packageRoot, argument] = process.argv.slice(2);
+  const candidateTarball = mode === "baseline" ? undefined : argument;
   const artifacts = process.env.OPENCLAW_UPGRADE_SURVIVOR_ARTIFACT_ROOT;
   const runtimeRoot = process.env.OPENCLAW_UPGRADE_SURVIVOR_RUNTIME_ROOT;
   assert(artifacts && runtimeRoot && packageRoot, "Missing isolated worker-cell paths");
   if (mode === "baseline") {
+    const baselineVersion = argument ?? "2026.9.4";
+    const baseline = publishedBaselines[baselineVersion];
+    assert(baseline, `Unsupported immutable published baseline: ${baselineVersion}`);
+    const baselineUrl = `https://registry.npmjs.org/openclaw/-/openclaw-${baselineVersion}.tgz`;
     const response = await fetch(baselineUrl);
     assert(response.ok, `Published baseline download failed: ${response.status}`);
     const bytes = Buffer.from(await response.arrayBuffer());
-    assert.equal(`sha512-${hash(bytes, "sha512", "base64")}`, baselineIntegrity);
+    assert.equal(`sha512-${hash(bytes, "sha512", "base64")}`, baseline.integrity);
     const tarball = path.join(runtimeRoot, "published-driver.tgz");
     fs.writeFileSync(tarball, bytes, { flag: "wx" });
     const expected = inspectTarball(tarball, runtimeRoot);
     assert.equal(expected.version, baselineVersion);
-    assert.equal(expected.buildInfo.commit, baselineCommit);
+    assert.equal(expected.buildInfo.commit, baseline.commit);
     const actual = readWorkerCellPackageIdentity(packageRoot);
     assertWorkerCellPackageIdentity(actual, {
       version: expected.version,
@@ -188,11 +200,13 @@ async function main() {
       process.env.OPENCLAW_DOCKER_E2E_SELECTED_SHA,
       "Candidate build commit must equal the selected source SHA",
     );
-    assert.notEqual(
-      expected.buildInfo.commit,
-      baselineCommit,
-      "Candidate still contains published bytes",
-    );
+    for (const baseline of Object.values(publishedBaselines)) {
+      assert.notEqual(
+        expected.buildInfo.commit,
+        baseline.commit,
+        "Candidate still contains published bytes",
+      );
+    }
     writeJson(path.join(artifacts, "candidate-package-identity.json"), expected);
   } else if (mode === "installed") {
     const expected = readJson(path.join(artifacts, "candidate-package-identity.json"));

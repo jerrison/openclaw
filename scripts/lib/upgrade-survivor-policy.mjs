@@ -184,11 +184,10 @@ export function supportsUpgradeSurvivorScenarioAtBaseline(scenario, baselineSpec
     return !frozenJuly && comparison !== null && comparison >= 0;
   }
   const version = parsePublishedReleaseVersion(baselineSpec);
-  if (scenario === "dreaming-cron-doctor") {
+  if (scenario === "dreaming-cron-doctor" || scenario === "cron-delivery-attempt") {
     return baselineSpec === "openclaw@2026.9.6";
   }
   if (
-    scenario === "cron-delivery-attempt" ||
     scenario === "projects-doctor" ||
     scenario === "channel-owner-policy" ||
     scenario === "projects-startup-migration"
