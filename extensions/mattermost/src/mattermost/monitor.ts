@@ -386,8 +386,7 @@ export async function monitorMattermostProvider(opts: MonitorMattermostOpts = {}
     await ingress.stop();
     unregisterInteractions();
   }
-  const slashShutdownCleanupPromise = slashShutdownCleanup;
-  if (slashShutdownCleanupPromise) {
-    await Promise.resolve(slashShutdownCleanupPromise);
+  if (slashShutdownCleanup) {
+    await slashShutdownCleanup;
   }
 }

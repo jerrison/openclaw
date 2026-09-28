@@ -1918,6 +1918,7 @@ describe("mattermost inbound user posts", () => {
     const replyOptions = mockState.dispatchInboundMessage.mock.calls.at(0)?.[0].replyOptions;
     expect(replyOptions?.disableBlockStreaming).toBe(false);
     expect(replyOptions?.preserveProgressCallbackStartOrder).toBeUndefined();
+    expect(replyOptions?.suppressDefaultToolProgressMessages).toBeUndefined();
   });
 
   it("preserves provider previews for observer-only hooks", async () => {
@@ -1941,6 +1942,7 @@ describe("mattermost inbound user posts", () => {
     const replyOptions = mockState.dispatchInboundMessage.mock.calls.at(0)?.[0].replyOptions;
     expect(replyOptions?.disableBlockStreaming).toBe(true);
     expect(replyOptions?.preserveProgressCallbackStartOrder).toBe(true);
+    expect(replyOptions?.suppressDefaultToolProgressMessages).toBe(true);
   });
 
   it.each([
@@ -1970,6 +1972,7 @@ describe("mattermost inbound user posts", () => {
     expect(replyOptions?.preserveProgressCallbackStartOrder).toBeUndefined();
     expect(replyOptions?.allowProgressCallbacksWhenSourceDeliverySuppressed).toBeUndefined();
     expect(replyOptions?.onObservedReplyDelivery).toBeUndefined();
+    expect(replyOptions?.suppressDefaultToolProgressMessages).toBeUndefined();
   });
 
   registerMattermostBlockProgressTests({
