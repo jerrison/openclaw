@@ -1,11 +1,10 @@
-import { setImmediate } from "node:timers/promises";
 import { afterEach, expect, it, vi } from "vitest";
+import { observeHostDataSql } from "../../test/helpers/sqlite-statement-execution-counter.js";
 import {
   replaceSessionEntry,
   replaceTranscriptEvents,
   waitForSessionTranscriptProjection,
 } from "../config/sessions/session-accessor.js";
-import * as projection from "../config/sessions/session-accessor.sqlite-active-projection.js";
 import { createDeferredCore } from "../shared/deferred.js";
 import { AgentDatabaseRegistryChangedError } from "../state/openclaw-agent-db-registry-listing.js";
 import { registerOpenClawAgentDatabase } from "../state/openclaw-agent-db-registry.js";
@@ -68,21 +67,13 @@ async function seedBroadcastHistory(storePath: string) {
 }
 
 it.each(["by-id", "count"] as const)(
-  "keeps the event loop available while broadcasting a stored %s read",
+  "broadcasts a stored %s read without executing SQLite on the caller thread",
   async (kind) => {
     await withOpenClawTestState({ scenario: "minimal" }, async (state) => {
       const { target, handler, broadcastToConnIds } = await seedBroadcastHistory(
         state.statePath("broadcast.sqlite"),
       );
-      const snapshot = vi.spyOn(projection, "withCurrentProjectionSnapshot");
-      let eventLoopProgress = false;
-      const turn = setImmediate().then(() => {
-        eventLoopProgress = true;
-      });
-      let progressedBeforeDelivery = false;
-      broadcastToConnIds.mockImplementation(() => {
-        progressedBeforeDelivery = eventLoopProgress;
-      });
+      const hostSql = observeHostDataSql();
       try {
         await handler({
           target,
@@ -99,11 +90,9 @@ it.each(["by-id", "count"] as const)(
           }),
           expect.any(Set),
         );
-        expect(progressedBeforeDelivery).toBe(true);
-        expect(snapshot).not.toHaveBeenCalled();
+        expect(hostSql.queries).toEqual([]);
       } finally {
-        await turn;
-        snapshot.mockRestore();
+        hostSql.restore();
       }
     });
   },
