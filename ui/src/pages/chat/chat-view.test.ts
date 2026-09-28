@@ -632,109 +632,36 @@ function renderModelControls(
   return container;
 }
 
-describe("chat typing status", () => {
-  it.each([
-    {
-      actors: [{ id: "ayaan", label: "Ayaan" }],
-      expectedText: "Ayaan is typing…",
-      expectedAvatars: 1,
-    },
-    {
-      actors: [
-        { id: "ayaan", label: "Ayaan" },
-        { id: "liam", label: "Liam" },
-        { id: "maya", label: "Maya" },
-        { id: "zoe", label: "Zoe" },
-      ],
-      expectedText: "Ayaan, Liam, Maya, Zoe are typing…",
-      expectedAvatars: 4,
-    },
-  ])("renders $expectedText in the transcript", ({ actors, expectedText, expectedAvatars }) => {
-    const container = renderChatView({ typingActors: actors });
-    const indicator = container.querySelector(".agent-chat__typing-indicator--outside");
-
-    expect(indicator?.closest('[data-virtual-row-key="presence:typing"]')).not.toBeNull();
-    expect(indicator?.closest(".agent-chat__composer-shell")).toBeNull();
-    expect(indicator?.querySelectorAll("[role=img]")).toHaveLength(expectedAvatars);
-    expect(indicator?.querySelectorAll(".agent-chat__typing-state")).toHaveLength(
-      Math.min(2, actors.length),
-    );
-    expect(
-      indicator?.querySelector(".agent-chat__typing-bubble")?.getAttribute("aria-hidden"),
-    ).toBe("true");
-    expect(indicator?.textContent).toContain(expectedText);
+describe("composer-attached typing shelf", () => {
+  it("places active typing with the input, not in transcript rows", () => {
+    const container = renderChatView({
+      typingActors: [{ id: "ayaan", label: "Ayaan", preview: "Available preview" }],
+      typingCount: 1,
+    });
+    const shelf = container.querySelector("openclaw-chat-typing-shelf");
+    expect(shelf).not.toBeNull();
+    expect(shelf?.closest(".agent-chat__typing-compose")).not.toBeNull();
+    expect(shelf?.closest(".agent-chat__input")).toBeNull();
+    expect(container.querySelector('[data-virtual-row-key="presence:typing"]')).toBeNull();
   });
-
-  it("anchors the run error and queue to the composer without moving transcript presence", () => {
+  it("keeps real notices and outbox above the attached shelf and input", () => {
     const container = renderChatView({
       typingActors: [{ id: "ayaan", label: "Ayaan" }],
+      typingCount: 1,
       runError: { summary: "Gateway unavailable" },
       queue: [{ id: "queued", text: "Try again", createdAt: 1 }],
     });
-    const indicator = requireElement(
-      container,
-      ".agent-chat__typing-indicator--outside",
-      "typing status",
-    );
-
-    const typingRow = indicator.closest('[data-virtual-row-key="presence:typing"]');
-    if (!typingRow) {
-      throw new Error("expected typing transcript row");
-    }
-    const error = requireElement(container, ".chat-error__content", "run error");
-    const shell = requireElement(container, ".agent-chat__composer-shell", "composer shell");
-    const queue = requireElement(container, ".chat-queue", "composer queue");
-    expect(error.textContent).toContain("Gateway unavailable");
-    expect(error.closest(".agent-chat__composer-notices")).not.toBeNull();
-    expect(typingRow.compareDocumentPosition(shell)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    const shell = requireElement(container, ".agent-chat__composer-shell", "composer");
+    const shelf = requireElement(container, "openclaw-chat-typing-shelf", "typing shelf");
+    const queue = requireElement(container, ".chat-queue", "outbox");
     expect(queue.closest(".agent-chat__composer-shell")).toBe(shell);
-    expect(
-      queue.compareDocumentPosition(requireElement(shell, ".agent-chat__input", "composer")),
-    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
-  });
-
-  it("keeps transcript typing status with the model setup composer", () => {
-    const container = renderChatView({
-      canSend: false,
-      modelSetupRequired: true,
-      typingActors: [{ id: "ayaan", label: "Ayaan" }],
-    });
-
-    expect(container.querySelector(".agent-chat__typing-indicator--outside")).not.toBeNull();
+    expect(container.querySelector(".chat-error__content")?.textContent).toContain(
+      "Gateway unavailable",
+    );
+    expect(shelf.closest(".agent-chat__typing-compose")).not.toBeNull();
+    expect(shelf.closest(".agent-chat__input")).toBeNull();
   });
 });
-
-function createBackgroundTasks(
-  overrides: Partial<NonNullable<ChatProps["backgroundTasks"]>> = {},
-): NonNullable<ChatProps["backgroundTasks"]> {
-  return {
-    sessionKey: "agent:main:main",
-    statusRowId: "chat-tasks-status-test",
-    collapsed: false,
-    narrowLayout: false,
-    connected: true,
-    canCancel: false,
-    loading: false,
-    error: null,
-    tasks: [],
-    activeCount: 0,
-    subagentActivity: {
-      rows: [],
-      overflowCount: 0,
-      taskIds: new Set<string>(),
-    },
-    cancellingTaskIds: new Set<string>(),
-    finishedCollapsed: false,
-    taskDetails: new Map(),
-    taskDetailErrors: new Map(),
-    taskDetailLoadingIds: new Set<string>(),
-    onToggleCollapsed: () => undefined,
-    onToggleFinished: () => undefined,
-    onRefresh: () => undefined,
-    onCancel: () => undefined,
-    ...overrides,
-  };
-}
 
 describe("chat run error", () => {
   it.each(["run", "request"])(
@@ -2208,34 +2135,6 @@ describe("chat composer workbench", () => {
     fallbackTrigger.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(openSpy).toHaveBeenCalledWith(src, "_blank", "noopener,noreferrer");
     openSpy.mockRestore();
-  });
-
-  it("shows the running-tasks status row after the turn settles, not while working", () => {
-    const backgroundTasks = createBackgroundTasks({
-      collapsed: true,
-      tasks: [
-        {
-          id: "task-1",
-          taskId: "task-1",
-          status: "running" as const,
-          agentId: "main",
-          createdAt: 1_000,
-          startedAt: 1_500,
-        },
-      ],
-    });
-    const messages = [{ role: "assistant", content: "done", timestamp: 1 }];
-
-    const settled = renderChatView({ messages, backgroundTasks });
-    const row = settled.querySelector(".chat-tasks-status");
-    expect(row).not.toBeNull();
-    expect(row?.querySelector(".chat-tasks-status__link")?.textContent?.trim()).toBe(
-      "1 running task",
-    );
-
-    // The working claw owns the signal while the run is live.
-    const working = renderChatView({ messages, backgroundTasks, canAbort: true, runActive: true });
-    expect(working.querySelector(".chat-tasks-status")).toBeNull();
   });
 });
 
@@ -6220,7 +6119,7 @@ describe("chat model controls", () => {
     ["agent", "Selecting a model updates this agent's default."],
     ["global", "Selecting a model updates the global default."],
   ] as const)(
-    "keeps the $target write target accessible without rendering a status row",
+    "keeps the %s write target accessible without a hover tooltip or status row",
     (target, scopeDescription) => {
       const { state } = createOpenAiHeaderState();
       state.sessionsResult = {
@@ -6235,7 +6134,7 @@ describe("chat model controls", () => {
 
       expect(container.querySelector("[data-chat-model-selection-target]")).toBeNull();
       const trigger = getChatModelSelect(container);
-      expect(trigger.title).toBe(scopeDescription);
+      expect(trigger.hasAttribute("title")).toBe(false);
       expect(trigger.getAttribute("aria-label")).toContain(scopeDescription);
       expect(container.querySelector("[data-chat-model-selection-scope]")).toBeNull();
       const modelOption = Array.from(
@@ -6647,7 +6546,7 @@ describe("chat model controls", () => {
         trigger.querySelector(".chat-controls__inline-select-label")?.textContent?.trim(),
       ).toBe(expected);
       expect(trigger.getAttribute("aria-label")).toBe(`Chat model: ${expected}`);
-      expect(trigger.title).toBe(expected);
+      expect(trigger.hasAttribute("title")).toBe(false);
       expect(trigger.dataset.chatModelLocked).toBe("true");
       expect(
         container.querySelector(".chat-controls__locked-model-badge")?.textContent?.trim(),

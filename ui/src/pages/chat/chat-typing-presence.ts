@@ -12,17 +12,11 @@ export type ChatTypingActorState = {
   exitDurationMs?: number;
 };
 
-export type ChatTypingActorView = Omit<ChatTypingActorState, "retireAt"> & {
+export type ChatTypingActorView = Pick<ChatTypingActorState, "label" | "preview"> & {
   id: string;
 };
 
-export type ChatTypingOverflow = {
-  // Large cohorts retain their avatar sample; only the sentence is summarized.
-  several: boolean;
-  // At most two actual active overflow names when "several" would be untrue.
-  names: string[];
-  exitDurationMs?: number;
-};
+export type ChatTypingPreviewDemand = "automatic" | "hidden" | "all";
 
 export function typingActorIdForSessionMessage(
   payload: unknown,
