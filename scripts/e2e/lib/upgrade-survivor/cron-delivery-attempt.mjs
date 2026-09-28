@@ -169,13 +169,14 @@ try {
   const schemaVersion = db
     .prepare("SELECT schema_version FROM schema_meta WHERE meta_key = 'primary'")
     .get().schema_version;
-  const contentVersion = JSON.parse(
+  const contentMarker = JSON.parse(
     db
       .prepare(
         "SELECT value_json FROM config_machine_state WHERE state_key = 'state.schema.contentVersion'",
       )
       .get().value_json,
   );
+  const contentVersion = Math.max(userVersion, contentMarker);
   const column =
     db
       .prepare("PRAGMA table_info(cron_run_receipts)")
@@ -223,6 +224,7 @@ try {
     userVersion,
     schemaVersion,
     contentVersion,
+    contentMarker,
     column,
     receipts: rows.receipts.map(({ store_key: _storeKey, ...receipt }) => receipt),
     jobs: rows.jobs.map(({ state_json, ...job }) => ({ ...job, state: JSON.parse(state_json) })),
