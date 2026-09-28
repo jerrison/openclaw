@@ -179,7 +179,7 @@ class ChatControllerCommandControlsTest {
     }
 
   @Test
-  fun startNewChatCreatesUnnamedWriteScopedSessionAndReloadsHistory() =
+  fun startNewChatCreatesIndependentSessionAndReloadsHistory() =
     runTest {
       val (controller, requests) =
         chatControllerTestSetup {
@@ -196,9 +196,9 @@ class ChatControllerCommandControlsTest {
 
       val create = requests.first { it.first == "sessions.create" }
       assertTrue(create.second.orEmpty().contains("\"agentId\":\"main\""))
-      assertTrue(create.second.orEmpty().contains("\"parentSessionKey\":\"main\""))
-      assertTrue(create.second.orEmpty().contains("\"emitCommandHooks\":true"))
-      assertTrue(create.second.orEmpty().contains("\"succeedsParent\":false"))
+      assertFalse(create.second.orEmpty().contains("\"parentSessionKey\""))
+      assertFalse(create.second.orEmpty().contains("\"emitCommandHooks\""))
+      assertFalse(create.second.orEmpty().contains("\"succeedsParent\""))
       assertFalse(create.second.orEmpty().contains("\"label\""))
       assertEquals("agent:main:dashboard:fresh", controller.sessionKey.value)
       assertEquals("fresh-session", controller.sessionId.value)
@@ -309,7 +309,7 @@ class ChatControllerCommandControlsTest {
     }
 
   @Test
-  fun startNewChatRetriesWithoutParentLifecycleAgainstOlderGateway() =
+  fun worktreeChatRetriesWithoutParentLifecycleAgainstOlderGateway() =
     runTest {
       var createCalls = 0
       val (controller, requests) =
@@ -335,10 +335,11 @@ class ChatControllerCommandControlsTest {
       controller.load("main")
       advanceUntilIdle()
 
-      assertTrue(controller.startNewChatAwait())
+      assertTrue(controller.startNewChatAwait(worktree = true))
 
       val creates = requests.filter { it.first == "sessions.create" }
       assertEquals(2, creates.size)
+      assertTrue(creates.all { it.second.orEmpty().contains("\"worktree\":true") })
       assertTrue(creates[0].second.orEmpty().contains("\"succeedsParent\":false"))
       assertEquals(false, creates[1].second.orEmpty().contains("\"succeedsParent\""))
       assertEquals(false, creates[1].second.orEmpty().contains("\"parentSessionKey\""))
@@ -395,6 +396,7 @@ class ChatControllerCommandControlsTest {
 
       val create = requests.first { it.first == "sessions.create" }
       assertTrue(create.second.orEmpty().contains("\"worktree\":true"))
+      assertTrue(create.second.orEmpty().contains("\"parentSessionKey\":\"main\""))
     }
 
   @Test
@@ -920,7 +922,7 @@ class ChatControllerCommandControlsTest {
 
       val create = requests.first { it.first == "sessions.create" }
       assertTrue(create.second.orEmpty().contains("\"agentId\":\"ops\""))
-      assertTrue(create.second.orEmpty().contains("\"parentSessionKey\":\"agent:ops:dashboard:parent\""))
+      assertFalse(create.second.orEmpty().contains("\"parentSessionKey\""))
       assertEquals("agent:ops:dashboard:fresh", controller.sessionKey.value)
     }
 

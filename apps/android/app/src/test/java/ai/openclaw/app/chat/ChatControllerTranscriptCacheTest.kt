@@ -1082,6 +1082,9 @@ class ChatControllerTranscriptCacheTest {
                 "key": "main",
                 "label": "Daily",
                 "category": "Work",
+                "parentSessionId": "parent-generation",
+                "spawnDepth": 1,
+                "forkedFromParent": true,
                 "pinned": true,
                 "archived": false,
                 "unread": true,
@@ -1100,6 +1103,9 @@ class ChatControllerTranscriptCacheTest {
       val session = controller.sessions.value.single()
       assertEquals("Daily", session.label)
       assertEquals("Work", session.category)
+      assertEquals("parent-generation", session.parentSessionId)
+      assertEquals(1, session.spawnDepth)
+      assertEquals(true, session.forkedFromParent)
       assertEquals(true, session.pinned)
       assertEquals(false, session.archived)
       assertEquals(true, session.unread)
@@ -1113,7 +1119,7 @@ class ChatControllerTranscriptCacheTest {
     runTest {
       val controller =
         createScriptedChatController {
-          respond("sessions.list", """{"sessions":[{"key":"main","label":"Daily","category":"Work","color":"green","pinned":true,"unread":true}]}""")
+          respond("sessions.list", """{"sessions":[{"key":"main","label":"Daily","category":"Work","color":"green","parentSessionId":"parent-generation","spawnDepth":1,"forkedFromParent":true,"pinned":true,"unread":true}]}""")
         }
       controller.refreshSessions()
       advanceUntilIdle()
@@ -1129,6 +1135,9 @@ class ChatControllerTranscriptCacheTest {
       assertEquals(true, session.pinned)
       assertEquals(true, session.unread)
       assertEquals("green", session.color)
+      assertEquals("parent-generation", session.parentSessionId)
+      assertEquals(1, session.spawnDepth)
+      assertEquals(true, session.forkedFromParent)
       assertEquals(30L, session.lastActivityAt)
     }
 

@@ -247,6 +247,60 @@ class SessionsScreenGroupingTest {
   }
 
   @Test
+  fun independentOperatorChatStaysOutsidePinnedHome() {
+    val home = session("agent:ops:custom-home", pinned = true).copy(isMain = true)
+    val chat =
+      session("agent:ops:dashboard:new", parentSessionKey = home.key).copy(
+        createdVia = "operator",
+        spawnDepth = 0,
+      )
+    val sections = buildSessionTreeSections(listOf(home, chat))
+
+    assertEquals(listOf("Pinned", null), sections.map { it.title })
+    assertEquals(listOf(home.key), sections[0].entries.map { it.session.key })
+    assertEquals(listOf(chat.key), sections[1].entries.map { it.session.key })
+    assertEquals(0, sections[1].entries.single().depth)
+    assertEquals(
+      home.key,
+      sections[1]
+        .entries
+        .single()
+        .session
+        .parentSessionKey,
+    )
+  }
+
+  @Test
+  fun explicitAndAmbiguousHomeChildrenKeepTheirNesting() {
+    val home = session("agent:ops:custom-home").copy(isMain = true)
+    val chat =
+      session("agent:ops:dashboard:new", parentSessionKey = home.key).copy(
+        createdVia = "operator",
+        spawnDepth = 0,
+      )
+    val children =
+      listOf(
+        "explicit parent" to chat.copy(parentSessionId = "home-generation"),
+        "delegation" to chat.copy(spawnDepth = 1),
+        "spawn" to chat.copy(spawnedBy = home.key),
+        "fork" to chat.copy(forkedFromParent = true),
+        "subagent" to chat.copy(classification = "subagent"),
+        "missing provenance" to chat.copy(createdVia = null),
+        "missing depth" to chat.copy(spawnDepth = null),
+      )
+    for ((name, child) in children) {
+      val rows = buildSessionTreeSections(listOf(home, child)).single().entries
+      assertEquals(name, listOf(home.key, child.key), rows.map { it.session.key })
+      assertEquals(name, listOf(0, 1), rows.map { it.depth })
+    }
+    val ordinaryParent = home.copy(isMain = false)
+    assertEquals(
+      listOf(0, 1),
+      buildSessionTreeSections(listOf(ordinaryParent, chat)).single().entries.map { it.depth },
+    )
+  }
+
+  @Test
   fun collapsedParentHidesOnlyItsDescendants() {
     val entries = listOf(session("parent"), session("child", spawnedBy = "parent"), session("sibling"))
 

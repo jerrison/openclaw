@@ -2416,12 +2416,7 @@ class ChatController internal constructor(
       } ?: return false
       if (lease == null) throw GatewayRequestNotEnqueued("not connected")
       val inheritParent =
-        synchronized(gatewayScopeApplyLock) {
-          // Plain New starts independently of a native thread. Explicit worktree
-          // requests retain their parent so the creation guard can reject them.
-          !_sessionId.value.isNullOrBlank() &&
-            (worktree || !isSessionModelSelectionLocked(sessionSettingsKey(parentKey, createGatewayScope, ownerAgentId)))
-        }
+        worktree && synchronized(gatewayScopeApplyLock) { !_sessionId.value.isNullOrBlank() }
       val params =
         buildJsonObject {
           put("agentId", JsonPrimitive(ownerAgentId))
@@ -7657,6 +7652,9 @@ class ChatController internal constructor(
       hasActiveRunMetadata = "hasActiveRun" in obj || "activeRunIds" in obj,
       hasActiveRunIdsMetadata = "activeRunIds" in obj,
       parentSessionKey = obj["parentSessionKey"].asStringOrNull()?.trim(),
+      parentSessionId = obj.nonBlankString("parentSessionId"),
+      spawnDepth = obj["spawnDepth"].asLongOrNull()?.toInt(),
+      forkedFromParent = obj["forkedFromParent"].asBooleanOrNull(),
       spawnedBy = obj["spawnedBy"].asStringOrNull()?.trim(),
       hasActiveSubagentRun = obj["hasActiveSubagentRun"].asBooleanOrNull(),
       subagentRunState = obj["subagentRunState"].asStringOrNull()?.trim(),
@@ -8992,6 +8990,9 @@ internal fun mergeChatSessionEntry(
         existing.hasActiveRunIdsMetadata || next.hasActiveRunIdsMetadata
       },
     parentSessionKey = next.parentSessionKey ?: existing.parentSessionKey,
+    parentSessionId = next.parentSessionId ?: existing.parentSessionId,
+    spawnDepth = next.spawnDepth ?: existing.spawnDepth,
+    forkedFromParent = next.forkedFromParent ?: existing.forkedFromParent,
     spawnedBy = next.spawnedBy ?: existing.spawnedBy,
     hasActiveSubagentRun = next.hasActiveSubagentRun ?: existing.hasActiveSubagentRun,
     subagentRunState = next.subagentRunState ?: existing.subagentRunState,
